@@ -3,7 +3,8 @@
 Headless broadcast audio downmix and channel matrix over MXL, built on the
 [samplez](https://github.com/danielclasen/samplez) engine, written in Rust.
 
-The crate holds the channel layouts and the downmix presets.
+The crate holds the channel layouts, the downmix presets and the start-up
+configuration with its validation.
 
 ## Presets
 
