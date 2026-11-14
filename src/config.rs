@@ -217,7 +217,15 @@ pub fn is_http_url(s: &str) -> bool {
         Some(p) => p.bytes().all(|b| b.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|p| p > 0),
         None => port.is_empty(),
     };
-    let host_ok = host.is_none_or(|h| h.parse::<std::net::Ipv4Addr>().is_ok() || is_dns_name(h));
+    // A host of digits and dots only is an IPv4 address or nothing, so
+    // `999.1.1.1` or `10.1` is not taken for a DNS name.
+    let host_ok = host.is_none_or(|h| {
+        if h.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+            h.parse::<std::net::Ipv4Addr>().is_ok()
+        } else {
+            is_dns_name(h)
+        }
+    });
     port_ok && host_ok && path.bytes().all(|b| b.is_ascii_graphic())
 }
 
@@ -338,7 +346,10 @@ impl Config {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the sets of names and flow ids seen so far are threaded through every output"
+    )]
     fn check_output<'a>(
         &self,
         at: &str,

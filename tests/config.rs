@@ -360,6 +360,10 @@ fn registry_url_and_dns_sd_domain_are_checked() {
         "http://-registry",
         "http://[fd00::1",
         "http://registry/a b",
+        "http://999.0.0.1:8010",
+        "http://10.1:8010",
+        "http://1.2.3.4.:8010",
+        "http://1234",
     ] {
         let mut v = base();
         v["nmos"] = json!({ "registry": { "url": bad } });
