@@ -1,0 +1,16 @@
+[package]
+name = "foldz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+repository = "https://github.com/danielclasen/foldz"
+description = "Headless broadcast audio downmix and channel matrix over MXL"
+publish = false
+
+[dependencies]
+samplez-dsp = { git = "https://github.com/danielclasen/samplez", rev = "65872e9a0a1d20b61ddfc50ad38c42f75df3c190" }
+serde = { version = "=1.0.229", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "=1.0.154"
