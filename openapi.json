@@ -1,0 +1,662 @@
+{
+  "components": {
+    "schemas": {
+      "Counters": {
+        "description": "The engine counters since start.",
+        "properties": {
+          "clockSteps": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "deadlineMiss": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "heartbeatBlocks": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "inputLateBlocks": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "inputProbes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "inputSilencedBlocks": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "inputWaitTimeout": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "outputFailedWrites": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "outputHeldBlocks": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overrunSkippedSamples": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processTimeMaxNs": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rtMinorFaults": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "telemetryDropped": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "waitEarly": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "wakeJitterMaxNs": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "heartbeatBlocks",
+          "deadlineMiss",
+          "overrunSkippedSamples",
+          "waitEarly",
+          "inputWaitTimeout",
+          "inputLateBlocks",
+          "inputSilencedBlocks",
+          "inputProbes",
+          "clockSteps",
+          "outputHeldBlocks",
+          "outputFailedWrites",
+          "telemetryDropped",
+          "wakeJitterMaxNs",
+          "processTimeMaxNs",
+          "rtMinorFaults"
+        ],
+        "type": "object"
+      },
+      "Downmix": {
+        "description": "The downmix as configured: every input and every output with the gain\nmatrix the engine applies to it.",
+        "properties": {
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/DownmixInput"
+            },
+            "type": "array"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/DownmixOutput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "inputs",
+          "outputs"
+        ],
+        "type": "object"
+      },
+      "DownmixInput": {
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "flow": {
+            "description": "The MXL flow read; `null` leaves the input unconnected.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "layout": {
+            "description": "IS-04 channel symbols, `-` for an unused channel.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "domain",
+          "layout"
+        ],
+        "type": "object"
+      },
+      "DownmixOutput": {
+        "properties": {
+          "citation": {
+            "description": "The document and table a published preset's coefficients come from.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "domain": {
+            "type": "string"
+          },
+          "flow": {
+            "description": "The MXL flow written.",
+            "type": "string"
+          },
+          "gainDb": {
+            "format": "double",
+            "type": "number"
+          },
+          "grouphint": {
+            "description": "The flow's grouphint tag, `<group>:<role>`.",
+            "type": "string"
+          },
+          "input": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lfeGainDb": {
+            "description": "The input's LFE added to every output channel at this gain in dB\nbefore `gainDb`; `null` when it is not added.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "matrix": {
+            "description": "The gains applied, `gainDb` included: one row per output channel,\none column per input channel.",
+            "items": {
+              "items": {
+                "format": "float",
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preset": {
+            "description": "`null` for an explicit matrix.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "input",
+          "domain",
+          "flow",
+          "label",
+          "grouphint",
+          "layout",
+          "gainDb",
+          "matrix"
+        ],
+        "type": "object"
+      },
+      "InputCounters": {
+        "properties": {
+          "belowLastRead": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "copied": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "invalid": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "late": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "other": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tooEarly": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tooLate": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "copied",
+          "belowLastRead",
+          "late",
+          "tooLate",
+          "tooEarly",
+          "invalid",
+          "other",
+          "probes"
+        ],
+        "type": "object"
+      },
+      "InputStateName": {
+        "enum": [
+          "attached",
+          "pruned",
+          "unconnected"
+        ],
+        "type": "string"
+      },
+      "InputStatus": {
+        "properties": {
+          "counters": {
+            "$ref": "#/components/schemas/InputCounters",
+            "description": "Per-block read outcomes."
+          },
+          "error": {
+            "description": "Why the last attach failed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "marginShort": {
+            "description": "The margin in samples the producer's declared commit batch needs,\nwhen `readerMarginSamples` is below it.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "marginWarning": {
+            "description": "The margin in samples the observed late blocks need.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/InputStateName",
+            "description": "`unconnected` for an input without a flow, which is not read."
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "counters"
+        ],
+        "type": "object"
+      },
+      "Login": {
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "OutputStatus": {
+        "properties": {
+          "attempts": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bufferLength": {
+            "description": "The flow's ring length in samples, once created.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "createFailures": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxCommitBatchSizeHint": {
+            "description": "The effective `maxCommitBatchSizeHint` and `maxSyncBatchSizeHint`.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "maxSyncBatchSizeHint": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "races": {
+            "description": "Creations that found the flow created by another writer first.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "realised": {
+            "description": "Whether the output's flow is created and written.",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why it is not.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "realised",
+          "attempts",
+          "races",
+          "createFailures"
+        ],
+        "type": "object"
+      },
+      "RtStep": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/StepState"
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "Status": {
+        "properties": {
+          "counters": {
+            "$ref": "#/components/schemas/Counters"
+          },
+          "diverged": {
+            "description": "Why the output no longer follows from the inputs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/InputStatus"
+            },
+            "type": "array"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/OutputStatus"
+            },
+            "type": "array"
+          },
+          "rt": {
+            "description": "The RT setup steps, in the order they run: capabilities, dumpable,\nmlock, stack, sched, affinity, ftzDaz, signals. A degraded step\nleaves the engine running without it.",
+            "items": {
+              "$ref": "#/components/schemas/RtStep"
+            },
+            "type": "array"
+          },
+          "rtPanic": {
+            "description": "The message of a panic on the RT thread; the engine stopped\nprocessing and deleted its output flows.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tls": {
+            "description": "One per listener that runs TLS.",
+            "items": {
+              "$ref": "#/components/schemas/TlsStatus"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rt",
+          "inputs",
+          "outputs",
+          "counters",
+          "tls"
+        ],
+        "type": "object"
+      },
+      "StepState": {
+        "enum": [
+          "active",
+          "degraded",
+          "off"
+        ],
+        "type": "string"
+      },
+      "TlsStatus": {
+        "properties": {
+          "fingerprint": {
+            "description": "SHA-256 of the certificate in use, colon-separated hex pairs.",
+            "type": "string"
+          },
+          "listener": {
+            "type": "string"
+          },
+          "loadedAt": {
+            "description": "Seconds since the Unix epoch of the last read or generation.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "description": "`files` or `selfSigned`.",
+            "type": "string"
+          },
+          "notAfter": {
+            "description": "Seconds since the Unix epoch at which the certificate expires.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "listener",
+          "mode",
+          "fingerprint",
+          "loadedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "session": {
+        "in": "cookie",
+        "name": "samplez_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Read-only foldz API",
+    "license": {
+      "identifier": "Apache-2.0",
+      "name": "Apache-2.0"
+    },
+    "title": "foldz",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/downmix": {
+      "get": {
+        "operationId": "downmix",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Downmix"
+                }
+              }
+            },
+            "description": "The downmix"
+          }
+        },
+        "summary": "The downmix as configured.",
+        "tags": [
+          "foldz"
+        ]
+      }
+    },
+    "/api/v1/login": {
+      "post": {
+        "operationId": "login",
+        "parameters": [
+          {
+            "description": "Must be 1",
+            "in": "header",
+            "name": "X-Samplez-Request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Session cookie set for 12 h"
+          },
+          "401": {
+            "description": "Wrong token"
+          },
+          "403": {
+            "description": "Host not allowed or request header missing"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Exchanges the API token for a session cookie; `token` mode only.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            },
+            "description": "The engine's status"
+          },
+          "503": {
+            "description": "The engine has stopped"
+          }
+        },
+        "summary": "The engine's RT setup, inputs, outputs and counters.",
+        "tags": [
+          "foldz"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "session": []
+    }
+  ]
+}

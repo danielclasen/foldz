@@ -1,9 +1,12 @@
-//! The foldz section of the config file: MXL domains, inputs, outputs
-//! and NMOS identity. Shape, layouts and matrices are fixed at start-up.
+//! The config file: the engine, RT and listener settings, MXL domains,
+//! inputs, outputs and NMOS identity. Shape, layouts and matrices are fixed
+//! at start-up.
 
 use std::collections::HashSet;
 use std::fmt;
+use std::path::{Path, PathBuf};
 
+use samplez_service::config::{ApiConfig, AuthConfig, Listeners};
 use serde::Deserialize;
 
 use crate::layout::Layout;
@@ -17,10 +20,98 @@ pub const MAX_MEMBERS: usize = 7;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
+    pub mxl: Mxl,
+    #[serde(default)]
+    pub engine: Engine,
+    #[serde(default)]
+    pub rt: samplez::config::Rt,
+    /// The API, machine, ops and NMOS listeners and their TLS.
+    #[serde(default)]
+    pub listeners: Listeners,
+    #[serde(default)]
+    pub auth: AuthConfig,
+    #[serde(default)]
+    pub api: ApiConfig,
+    #[serde(default)]
     pub nmos: Nmos,
     pub domains: Vec<Domain>,
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Mxl {
+    /// The libmxl shared library, loaded at start.
+    #[serde(default = "default_library_path")]
+    pub library_path: PathBuf,
+}
+
+impl Default for Mxl {
+    fn default() -> Self {
+        Mxl {
+            library_path: default_library_path(),
+        }
+    }
+}
+
+fn default_library_path() -> PathBuf {
+    PathBuf::from("/opt/mxl/lib/libmxl.so")
+}
+
+/// The samplez engine's timing; samplez checks the values.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Engine {
+    /// 48000 is the only rate samplez runs at.
+    #[serde(default = "default_sample_rate")]
+    pub sample_rate: u32,
+    /// Block size B in samples, 16 to 1024.
+    #[serde(default = "default_block_size")]
+    pub block_size: u32,
+    /// The read delay behind libmxl's clock.
+    #[serde(default = "default_margin")]
+    pub reader_margin_samples: u32,
+    #[serde(default = "default_catchup")]
+    pub max_catchup_blocks: u32,
+    #[serde(default = "default_prune")]
+    pub prune_after_blocks: u32,
+    /// The length of an input's fade in and out.
+    #[serde(default = "default_ramp")]
+    pub ramp_samples: u32,
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Engine {
+            sample_rate: default_sample_rate(),
+            block_size: default_block_size(),
+            reader_margin_samples: default_margin(),
+            max_catchup_blocks: default_catchup(),
+            prune_after_blocks: default_prune(),
+            ramp_samples: default_ramp(),
+        }
+    }
+}
+
+// The samplez defaults (samplez src/config.rs at v0.1.0).
+fn default_sample_rate() -> u32 {
+    48_000
+}
+fn default_block_size() -> u32 {
+    48
+}
+fn default_margin() -> u32 {
+    576
+}
+fn default_catchup() -> u32 {
+    2
+}
+fn default_prune() -> u32 {
+    50
+}
+fn default_ramp() -> u32 {
+    480
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -92,9 +183,17 @@ pub struct Output {
     /// required with more than one member, refused with one.
     #[serde(default)]
     pub merged_flow: Option<String>,
-    /// IS-04 label of the output's Source, Flow and Sender.
+    /// IS-04 label of the output's Source, Flow and Sender; the output's
+    /// name when empty.
     #[serde(default)]
     pub label: String,
+    /// The group name of the flow's `urn:x-nmos:tag:grouphint/v1.0` tag,
+    /// `<group>:<role>`; the output's name when absent.
+    #[serde(default)]
+    pub group: Option<String>,
+    /// The role in that group; `Audio` when absent.
+    #[serde(default)]
+    pub role: Option<String>,
     pub layout: Layout,
     /// Exactly one of `preset` and `matrix`.
     #[serde(default)]
@@ -110,6 +209,25 @@ pub struct Output {
     pub lfe: Option<Lfe>,
     #[serde(default)]
     pub gain_db: f64,
+}
+
+impl Output {
+    /// The IS-04 label: `label`, or the output's name when that is empty.
+    pub fn label(&self) -> &str {
+        if self.label.is_empty() {
+            &self.name
+        } else {
+            &self.label
+        }
+    }
+
+    pub fn group(&self) -> &str {
+        self.group.as_deref().unwrap_or(&self.name)
+    }
+
+    pub fn role(&self) -> &str {
+        self.role.as_deref().unwrap_or("Audio")
+    }
 }
 
 /// A config the binary refuses to start with: where, and why.
@@ -242,6 +360,14 @@ impl Config {
     /// order.
     pub fn validate(&self) -> Result<Vec<Fold>, ConfigError> {
         self.check_nmos()?;
+        // The machine listener serves machine clients that send commands;
+        // foldz takes none.
+        if self.listeners.machine.is_some() {
+            return err("listeners.machine", "foldz has no machine listener");
+        }
+        if self.auth.machine_token.is_some() {
+            return err("auth.machineToken", "foldz has no machine listener");
+        }
 
         if self.domains.is_empty() {
             return err("domains", "at least one domain is required");
@@ -302,6 +428,119 @@ impl Config {
             folds.push(folded);
         }
         Ok(folds)
+    }
+
+    /// Reads, parses and checks the config file at `path`, and returns it
+    /// with each output's fold.
+    pub fn load(path: &Path) -> Result<(Config, Vec<Fold>), ConfigError> {
+        let at = path.display().to_string();
+        let text = std::fs::read_to_string(path).or_else(|e| err(&at, e.to_string()))?;
+        let config: Config = serde_json::from_str(&text).or_else(|e| err(&at, e.to_string()))?;
+        let folds = config.validate()?;
+        Ok((config, folds))
+    }
+
+    /// The samplez engine config of this foldz config and its `folds`, from
+    /// [`Config::validate`]: one engine input per input with a flow, one
+    /// engine output per output, and one gain matrix holding every
+    /// output's fold, rows per input channel and columns per output
+    /// channel. An output whose input has no flow gets zero gains: it is
+    /// written silent.
+    ///
+    /// Refuses what this build does not implement: NMOS, and more than one
+    /// member flow per output, which needs replication.
+    pub fn engine(&self, folds: &[Fold]) -> Result<samplez::Config, ConfigError> {
+        if self.nmos.enabled {
+            return err("nmos.enabled", "NMOS is not implemented in this build");
+        }
+        if self.outputs.iter().any(|o| o.flows.len() > 1) {
+            return err(
+                "outputs",
+                "more than one member flow per output needs replication, which is not \
+                 implemented in this build",
+            );
+        }
+        let only_domain = (self.domains.len() == 1).then(|| self.domains[0].name.as_str());
+        let domain = |given: &Option<String>| {
+            given
+                .as_deref()
+                .or(only_domain)
+                .expect("validate resolved the domain")
+                .to_owned()
+        };
+        // The first engine matrix row of each input that has a flow.
+        let mut first_row = Vec::with_capacity(self.inputs.len());
+        let mut rows = 0;
+        let mut inputs = Vec::new();
+        for input in &self.inputs {
+            first_row.push(input.flow.as_ref().map(|_| rows));
+            if let Some(flow) = &input.flow {
+                rows += input.channels;
+                inputs.push(serde_json::json!({
+                    "name": input.name,
+                    "domain": domain(&input.domain),
+                    "flowId": flow,
+                    "channels": input.channels,
+                }));
+            }
+        }
+        let columns: usize = folds.iter().map(|f| f.matrix.outputs()).sum();
+        let mut matrix = vec![vec![0.0f32; columns]; rows];
+        let mut outputs = Vec::new();
+        let mut column = 0;
+        for (output, f) in self.outputs.iter().zip(folds) {
+            let input = match &output.input {
+                Some(name) => self.inputs.iter().position(|i| &i.name == name),
+                None => Some(0),
+            }
+            .expect("validate resolved the input");
+            if let Some(first) = first_row[input] {
+                for j in 0..f.matrix.outputs() {
+                    for i in 0..f.matrix.inputs() {
+                        matrix[first + i][column + j] = f.matrix.gain(j, i);
+                    }
+                }
+            }
+            column += f.matrix.outputs();
+            outputs.push(serde_json::json!({
+                "name": output.name,
+                "domain": domain(&output.domain),
+                "flowId": output.flows[0],
+                "label": output.label(),
+                "group": output.group(),
+                "role": output.role(),
+                "channels": f.matrix.outputs(),
+            }));
+        }
+        let e = &self.engine;
+        let rt = &self.rt;
+        let rt_cpu = match rt.rt_cpu {
+            samplez::config::RtCpu::Auto => serde_json::json!("auto"),
+            samplez::config::RtCpu::None => serde_json::json!("none"),
+            samplez::config::RtCpu::First => serde_json::json!("first"),
+            samplez::config::RtCpu::Last => serde_json::json!("last"),
+            samplez::config::RtCpu::Index(i) => serde_json::json!(i),
+        };
+        let v = serde_json::json!({
+            "sampleRate": e.sample_rate,
+            "blockSize": e.block_size,
+            "readerMarginSamples": e.reader_margin_samples,
+            "maxCatchupBlocks": e.max_catchup_blocks,
+            "pruneAfterBlocks": e.prune_after_blocks,
+            "rampSamples": e.ramp_samples,
+            "libmxl": self.mxl.library_path,
+            "domains": self.domains.iter().map(|d| serde_json::json!({
+                "name": d.name, "path": d.path,
+            })).collect::<Vec<_>>(),
+            "inputs": inputs,
+            "outputs": outputs,
+            "matrix": matrix,
+            "rt": { "enabled": rt.enabled, "priority": rt.priority, "rtCpu": rt_cpu },
+        });
+        samplez::Config::parse(&v.to_string()).or_else(|e| {
+            let reason = e.0;
+            err("engine", reason)
+        })
     }
 
     fn check_input<'a>(
@@ -365,6 +604,14 @@ impl Config {
         }
         if !names.insert(output.name.as_str()) {
             return err(at, "name is used twice among inputs and outputs");
+        }
+        for (field, value) in [("group", output.group()), ("role", output.role())] {
+            if value.is_empty() || value.contains(':') {
+                return err(
+                    format!("{at}.{field}"),
+                    format!("{value:?} is empty or holds ':', the grouphint separator"),
+                );
+            }
         }
         let input_name = pick(
             &format!("{at}.input"),
