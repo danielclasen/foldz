@@ -99,3 +99,13 @@ fn shuffle_is_bit_transparent() {
     let source = [3, 0, 7, 1, 1, 6];
     check(Mapping::Shuffle(&source), &["-"; 8], &["-"; 6], &source);
 }
+
+#[test]
+fn explicit_unity_matrix_is_bit_transparent() {
+    let rows = vec![
+        vec![0.0, 0.0, 1.0, 0.0],
+        vec![1.0, 0.0, 0.0, 0.0],
+        vec![0.0, 0.0, 0.0, 1.0],
+    ];
+    check(Mapping::Matrix(&rows), &["-"; 4], &["-"; 3], &[2, 0, 3]);
+}
