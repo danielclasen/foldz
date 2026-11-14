@@ -88,6 +88,10 @@ pub struct Output {
     pub domain: Option<String>,
     /// MXL flow id written by each replica, indexed by replica ordinal.
     pub flows: Vec<String>,
+    /// Id of the flow the `MxlFlowRedundancySet` merges the members into;
+    /// required with more than one member, refused with one.
+    #[serde(default)]
+    pub merged_flow: Option<String>,
     /// IS-04 label of the output's Source, Flow and Sender.
     #[serde(default)]
     pub label: String,
@@ -171,6 +175,60 @@ fn pick<'a>(
     }
 }
 
+/// Whether `s` is a DNS name: dot-separated labels of 1 to 63 ASCII
+/// letters, digits and hyphens, no label starting or ending with a hyphen,
+/// at most 253 characters without an optional trailing dot.
+pub fn is_dns_name(s: &str) -> bool {
+    let s = s.strip_suffix('.').unwrap_or(s);
+    !s.is_empty()
+        && s.len() <= 253
+        && s.split('.').all(|label| {
+            (1..=63).contains(&label.len())
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+}
+
+/// Whether `s` is an `http` or `https` URL whose host is a DNS name, an
+/// IPv4 address or a bracketed IPv6 address, with an optional port of 1
+/// to 65535 and an optional path of printable ASCII without spaces.
+pub fn is_http_url(s: &str) -> bool {
+    let Some(rest) = s
+        .strip_prefix("http://")
+        .or_else(|| s.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    let (authority, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    let (host, port) = match authority.strip_prefix('[') {
+        Some(v6) => match v6.split_once(']') {
+            Some((addr, port)) if addr.parse::<std::net::Ipv6Addr>().is_ok() => (None, port),
+            _ => return false,
+        },
+        None => {
+            let (host, port) = authority.split_at(authority.find(':').unwrap_or(authority.len()));
+            (Some(host), port)
+        }
+    };
+    let port_ok = match port.strip_prefix(':') {
+        Some(p) => p.bytes().all(|b| b.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|p| p > 0),
+        None => port.is_empty(),
+    };
+    let host_ok = host.is_none_or(|h| h.parse::<std::net::Ipv4Addr>().is_ok() || is_dns_name(h));
+    port_ok && host_ok && path.bytes().all(|b| b.is_ascii_graphic())
+}
+
+/// Adds which `kind` named `name` an error concerns to its reason.
+fn named(kind: &'static str, name: &str) -> impl FnOnce(ConfigError) -> ConfigError {
+    move |e| ConfigError {
+        at: e.at,
+        reason: format!("{kind} {name:?}: {}", e.reason),
+    }
+}
+
 impl Config {
     /// Checks the whole config and returns each output's fold, in output
     /// order.
@@ -206,127 +264,182 @@ impl Config {
             return err("outputs", "at least one output is required");
         }
         let mut names = HashSet::new();
-        let mut input_names = Vec::new();
         let mut input_flows = HashSet::new();
-        for input in &self.inputs {
-            let at = format!("inputs[{}]", input.name);
-            if input.name.is_empty() {
-                return err("inputs", "an input has an empty name");
-            }
-            if !names.insert(input.name.as_str()) {
-                return err(at, "name is used twice");
-            }
-            if input.channels != input.layout.len() {
-                return err(
-                    format!("{at}.layout"),
-                    format!(
-                        "has {} labels for {} channels",
-                        input.layout.len(),
-                        input.channels
-                    ),
-                );
-            }
-            pick(
-                &format!("{at}.domain"),
-                "domain",
-                input.domain.as_deref(),
+        for (i, input) in self.inputs.iter().enumerate() {
+            self.check_input(
+                &format!("inputs[{i}]"),
+                input,
                 &domains,
-            )?;
-            if let Some(flow) = &input.flow {
-                check_uuid(&format!("{at}.flow"), flow)?;
-                input_flows.insert(flow.as_str());
-            }
-            input_names.push(input.name.as_str());
+                &mut names,
+                &mut input_flows,
+            )
+            .map_err(named("input", &input.name))?;
         }
 
-        let members = self.outputs[0].flows.len();
+        let input_names: Vec<&str> = self.inputs.iter().map(|i| i.name.as_str()).collect();
         let mut output_flows = HashSet::new();
         let mut folds = Vec::with_capacity(self.outputs.len());
-        for output in &self.outputs {
-            let at = format!("outputs[{}]", output.name);
-            if output.name.is_empty() {
-                return err("outputs", "an output has an empty name");
-            }
-            if !names.insert(output.name.as_str()) {
-                return err(at, "name is used twice among inputs and outputs");
-            }
-            let input_name = pick(
-                &format!("{at}.input"),
-                "input",
-                output.input.as_deref(),
-                &input_names,
-            )?;
-            pick(
-                &format!("{at}.domain"),
-                "domain",
-                output.domain.as_deref(),
-                &domains,
-            )?;
-
-            let flows_at = format!("{at}.flows");
-            if !(1..=MAX_MEMBERS).contains(&output.flows.len()) {
-                return err(
-                    flows_at,
-                    format!(
-                        "has {} flow ids, 1 to {MAX_MEMBERS} are allowed",
-                        output.flows.len()
-                    ),
-                );
-            }
-            if output.flows.len() != members {
-                return err(
-                    flows_at,
-                    format!(
-                        "has {} flow ids and outputs[{}] {members}; every replica writes one \
-                         member flow per output",
-                        output.flows.len(),
-                        self.outputs[0].name
-                    ),
-                );
-            }
-            for (ordinal, flow) in output.flows.iter().enumerate() {
-                let at = format!("{flows_at}[{ordinal}]");
-                check_uuid(&at, flow)?;
-                if input_flows.contains(flow.as_str()) {
-                    return err(at, format!("flow {flow} is also an input flow"));
-                }
-                if !output_flows.insert(flow.as_str()) {
-                    return err(at, format!("flow {flow} is used twice"));
-                }
-            }
-
-            if output.preset.is_some() && output.matrix.is_some() {
-                return err(at, "preset and matrix are mutually exclusive");
-            }
-            let mapping = match (&output.preset, &output.source, &output.matrix) {
-                (Some(PresetName::Shuffle), Some(source), _) => Mapping::Shuffle(source),
-                (Some(PresetName::Shuffle), None, _) => {
-                    return err(format!("{at}.source"), "required with preset shuffle");
-                }
-                (_, Some(_), _) => {
-                    return err(format!("{at}.source"), "allowed with preset shuffle only");
-                }
-                (Some(PresetName::Select), None, _) => Mapping::Select,
-                (Some(PresetName::Table(preset)), None, _) => Mapping::Preset(*preset),
-                (None, None, Some(rows)) => Mapping::Matrix(rows),
-                (None, None, None) => return err(at, "preset or matrix is required"),
-            };
-            let input = self
-                .inputs
-                .iter()
-                .find(|i| i.name == input_name)
-                .expect("pick returned a configured input");
-            let folded = fold(
-                mapping,
-                &input.layout,
-                &output.layout,
-                output.lfe,
-                output.gain_db,
-            )
-            .or_else(|e| err(at, e.to_string()))?;
+        for (i, output) in self.outputs.iter().enumerate() {
+            let folded = self
+                .check_output(
+                    &format!("outputs[{i}]"),
+                    output,
+                    &domains,
+                    &input_names,
+                    &mut names,
+                    &input_flows,
+                    &mut output_flows,
+                )
+                .map_err(named("output", &output.name))?;
             folds.push(folded);
         }
         Ok(folds)
+    }
+
+    fn check_input<'a>(
+        &self,
+        at: &str,
+        input: &'a Input,
+        domains: &[&str],
+        names: &mut HashSet<&'a str>,
+        input_flows: &mut HashSet<&'a str>,
+    ) -> Result<(), ConfigError> {
+        if input.name.is_empty() {
+            return err(at, "name is empty");
+        }
+        if !names.insert(input.name.as_str()) {
+            return err(at, "name is used twice");
+        }
+        if input.channels != input.layout.len() {
+            return err(
+                format!("{at}.layout"),
+                format!(
+                    "has {} labels for {} channels",
+                    input.layout.len(),
+                    input.channels
+                ),
+            );
+        }
+        pick(
+            &format!("{at}.domain"),
+            "domain",
+            input.domain.as_deref(),
+            domains,
+        )?;
+        if let Some(flow) = &input.flow {
+            check_uuid(&format!("{at}.flow"), flow)?;
+            if !input_flows.insert(flow.as_str()) {
+                return err(
+                    format!("{at}.flow"),
+                    format!("flow {flow} is read by another input"),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_output<'a>(
+        &self,
+        at: &str,
+        output: &'a Output,
+        domains: &[&str],
+        input_names: &[&str],
+        names: &mut HashSet<&'a str>,
+        input_flows: &HashSet<&str>,
+        output_flows: &mut HashSet<&'a str>,
+    ) -> Result<Fold, ConfigError> {
+        if output.name.is_empty() {
+            return err(at, "name is empty");
+        }
+        if !names.insert(output.name.as_str()) {
+            return err(at, "name is used twice among inputs and outputs");
+        }
+        let input_name = pick(
+            &format!("{at}.input"),
+            "input",
+            output.input.as_deref(),
+            input_names,
+        )?;
+        pick(
+            &format!("{at}.domain"),
+            "domain",
+            output.domain.as_deref(),
+            domains,
+        )?;
+
+        let members = self.outputs[0].flows.len();
+        let flows_at = format!("{at}.flows");
+        if !(1..=MAX_MEMBERS).contains(&output.flows.len()) {
+            return err(
+                flows_at,
+                format!(
+                    "has {} flow ids, 1 to {MAX_MEMBERS} are allowed",
+                    output.flows.len()
+                ),
+            );
+        }
+        if output.flows.len() != members {
+            return err(
+                flows_at,
+                format!(
+                    "has {} flow ids and outputs[0] {members}; every replica writes one member \
+                     flow per output",
+                    output.flows.len()
+                ),
+            );
+        }
+        let merged_at = format!("{at}.mergedFlow");
+        let ids = output
+            .flows
+            .iter()
+            .enumerate()
+            .map(|(o, f)| (format!("{flows_at}[{o}]"), f));
+        let merged = match (&output.merged_flow, members) {
+            (None, 1) => None,
+            (Some(_), 1) => return err(merged_at, "allowed with more than one member flow only"),
+            (None, _) => return err(merged_at, "required with more than one member flow"),
+            (Some(id), _) => Some((merged_at, id)),
+        };
+        for (at, flow) in ids.chain(merged) {
+            check_uuid(&at, flow)?;
+            if input_flows.contains(flow.as_str()) {
+                return err(at, format!("flow {flow} is also an input flow"));
+            }
+            if !output_flows.insert(flow.as_str()) {
+                return err(at, format!("flow {flow} is used twice"));
+            }
+        }
+
+        if output.preset.is_some() && output.matrix.is_some() {
+            return err(at, "preset and matrix are mutually exclusive");
+        }
+        let mapping = match (&output.preset, &output.source, &output.matrix) {
+            (Some(PresetName::Shuffle), Some(source), _) => Mapping::Shuffle(source),
+            (Some(PresetName::Shuffle), None, _) => {
+                return err(format!("{at}.source"), "required with preset shuffle");
+            }
+            (_, Some(_), _) => {
+                return err(format!("{at}.source"), "allowed with preset shuffle only");
+            }
+            (Some(PresetName::Select), None, _) => Mapping::Select,
+            (Some(PresetName::Table(preset)), None, _) => Mapping::Preset(*preset),
+            (None, None, Some(rows)) => Mapping::Matrix(rows),
+            (None, None, None) => return err(at, "preset or matrix is required"),
+        };
+        let input = self
+            .inputs
+            .iter()
+            .find(|i| i.name == input_name)
+            .expect("pick returned a configured input");
+        fold(
+            mapping,
+            &input.layout,
+            &output.layout,
+            output.lfe,
+            output.gain_db,
+        )
+        .or_else(|e| err(at, e.to_string()))
     }
 
     fn check_nmos(&self) -> Result<(), ConfigError> {
@@ -336,6 +449,19 @@ impl Config {
             if !nmos.seed_name.is_empty() {
                 return err("nmos", "seed and seedName are mutually exclusive");
             }
+        }
+        let registry = &nmos.registry;
+        if !registry.url.is_empty() && !is_http_url(&registry.url) {
+            return err(
+                "nmos.registry.url",
+                format!("{:?} is not an http or https URL", registry.url),
+            );
+        }
+        if !registry.dns_sd_domain.is_empty() && !is_dns_name(&registry.dns_sd_domain) {
+            return err(
+                "nmos.registry.dnsSdDomain",
+                format!("{:?} is not a DNS name", registry.dns_sd_domain),
+            );
         }
         if nmos.enabled {
             if nmos.seed.is_none() && nmos.seed_name.is_empty() {

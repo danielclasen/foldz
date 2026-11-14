@@ -44,7 +44,7 @@ fn assert_invalid(v: Value, at: &str, reason: &str) {
 }
 
 #[test]
-fn plan_example_is_valid() {
+fn minimal_config_is_valid() {
     let folds = parse(base()).unwrap().validate().unwrap();
     assert_eq!(folds.len(), 1);
     assert_eq!(folds[0].consumed, [0, 1, 2, 4, 5]);
@@ -140,10 +140,10 @@ fn uuids_are_lowercase_canonical() {
     }
     let mut v = base();
     v["outputs"][0]["flows"] = json!([OUT_A.to_uppercase()]);
-    assert_invalid(v, "outputs[stereo].flows[0]", "not a lowercase UUID");
+    assert_invalid(v, "outputs[0].flows[0]", "not a lowercase UUID");
     let mut v = base();
     v["inputs"][0]["flow"] = json!("main");
-    assert_invalid(v, "inputs[main].flow", "not a lowercase UUID");
+    assert_invalid(v, "inputs[0].flow", "not a lowercase UUID");
     let mut v = base();
     v["nmos"] = json!({ "seed": "x" });
     assert_invalid(v, "nmos.seed", "not a lowercase UUID");
@@ -163,7 +163,7 @@ fn input_flow_may_be_null_or_absent() {
 fn layout_length_matches_channels() {
     let mut v = base();
     v["inputs"][0]["channels"] = json!(16);
-    assert_invalid(v, "inputs[main].layout", "8 labels for 16 channels");
+    assert_invalid(v, "inputs[0].layout", "8 labels for 16 channels");
 }
 
 #[test]
@@ -188,17 +188,17 @@ fn domain_is_required_with_several_and_must_exist() {
     v["domains"] = json!([{ "name": "a", "path": "/mxl/a" }, { "name": "b", "path": "/mxl/b" }]);
     assert_invalid(
         v.clone(),
-        "inputs[main].domain",
+        "inputs[0].domain",
         "required with more than one domain",
     );
     v["inputs"][0]["domain"] = json!("a");
     assert_invalid(
         v.clone(),
-        "outputs[stereo].domain",
+        "outputs[0].domain",
         "required with more than one domain",
     );
     v["outputs"][0]["domain"] = json!("c");
-    assert_invalid(v, "outputs[stereo].domain", "no domain named \"c\"");
+    assert_invalid(v, "outputs[0].domain", "no domain named \"c\"");
 }
 
 #[test]
@@ -208,99 +208,195 @@ fn input_is_required_with_several_and_must_exist() {
     v["inputs"].as_array_mut().unwrap().push(second);
     assert_invalid(
         v.clone(),
-        "outputs[stereo].input",
+        "outputs[0].input",
         "required with more than one input",
     );
     v["outputs"][0]["input"] = json!("nope");
-    assert_invalid(
-        v.clone(),
-        "outputs[stereo].input",
-        "no input named \"nope\"",
-    );
+    assert_invalid(v.clone(), "outputs[0].input", "no input named \"nope\"");
     // The output reads aux, which has no C.
     v["outputs"][0]["input"] = json!("aux");
-    assert_invalid(v, "outputs[stereo]", "reads channel C");
+    assert_invalid(v, "outputs[0]", "reads channel C");
 }
 
 #[test]
 fn names_are_unique_across_inputs_and_outputs() {
     let mut v = base();
     v["outputs"][0]["name"] = json!("main");
-    assert_invalid(v, "outputs[main]", "used twice");
+    assert_invalid(v, "outputs[0]", "used twice");
     let mut v = base();
     let dup = v["inputs"][0].clone();
     v["inputs"].as_array_mut().unwrap().push(dup);
-    assert_invalid(v, "inputs[main]", "used twice");
+    assert_invalid(v, "inputs[1]", "used twice");
+}
+
+/// Lowercase UUIDs differing in the last two hex digits.
+fn id(n: u8) -> String {
+    format!("0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c{n:02x}")
 }
 
 #[test]
 fn member_flows_follow_the_replica_rules() {
     let mut v = base();
     v["outputs"][0]["flows"] = json!([]);
-    assert_invalid(v, "outputs[stereo].flows", "1 to 7");
+    assert_invalid(v, "outputs[0].flows", "1 to 7");
     let mut v = base();
-    let eight: Vec<String> = (0..8)
-        .map(|i| format!("0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c2{i}"))
-        .collect();
-    v["outputs"][0]["flows"] = json!(eight);
-    assert_invalid(v, "outputs[stereo].flows", "1 to 7");
+    v["outputs"][0]["flows"] = json!((0..8).map(id).collect::<Vec<_>>());
+    v["outputs"][0]["mergedFlow"] = json!(id(0x80));
+    assert_invalid(v, "outputs[0].flows", "1 to 7");
     let mut v = base();
     v["outputs"][0]["flows"] = json!([OUT_A, OUT_A]);
-    assert_invalid(v, "outputs[stereo].flows[1]", "used twice");
+    v["outputs"][0]["mergedFlow"] = json!(id(0x80));
+    assert_invalid(v, "outputs[0].flows[1]", "used twice");
     let mut v = base();
     v["outputs"][0]["flows"] = json!([IN_A]);
-    assert_invalid(v, "outputs[stereo].flows[0]", "also an input flow");
+    assert_invalid(v, "outputs[0].flows[0]", "also an input flow");
 
-    // Three replicas: every output names three members, all distinct.
+    // Three replicas: every output names three members and a merged flow,
+    // all distinct.
     let mut v = base();
-    let ids = |k: u8| -> Vec<String> {
-        (0..3)
-            .map(|i| format!("0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c{k}{i}"))
-            .collect()
-    };
-    v["outputs"][0]["flows"] = json!(ids(3));
+    v["outputs"][0]["flows"] = json!([id(0x30), id(0x31), id(0x32)]);
+    v["outputs"][0]["mergedFlow"] = json!(id(0x3f));
     let mut second = v["outputs"][0].clone();
     second["name"] = json!("mono");
     second["layout"] = json!(["C"]);
     second["preset"] = json!("bs775-3_2-to-1_0");
-    second["flows"] = json!(ids(4));
-    v["outputs"].as_array_mut().unwrap().push(second.clone());
+    second["flows"] = json!([id(0x40), id(0x41), id(0x42)]);
+    second["mergedFlow"] = json!(id(0x4f));
+    v["outputs"].as_array_mut().unwrap().push(second);
     parse(v.clone()).unwrap().validate().unwrap();
-    v["outputs"][1]["flows"] = json!(&ids(4)[..2]);
+    let mut w = v.clone();
+    w["outputs"][1]["flows"] = json!([id(0x40), id(0x41)]);
     assert_invalid(
-        v.clone(),
-        "outputs[mono].flows",
+        w,
+        "outputs[1].flows",
         "every replica writes one member flow",
     );
-    v["outputs"][1]["flows"] = json!([OUT_B, ids(3)[1], ids(4)[2]]);
-    assert_invalid(v, "outputs[mono].flows[1]", "used twice");
+    let mut w = v.clone();
+    w["outputs"][1]["flows"] = json!([OUT_B, id(0x31), id(0x42)]);
+    assert_invalid(w, "outputs[1].flows[1]", "used twice");
+}
+
+#[test]
+fn merged_flow_follows_the_member_count() {
+    let mut v = base();
+    v["outputs"][0]["mergedFlow"] = json!(OUT_B);
+    assert_invalid(v, "outputs[0].mergedFlow", "more than one member flow only");
+
+    let mut v = base();
+    v["outputs"][0]["flows"] = json!([OUT_A, OUT_B]);
+    assert_invalid(
+        v.clone(),
+        "outputs[0].mergedFlow",
+        "required with more than one",
+    );
+    for (merged, reason) in [
+        (OUT_A.to_owned(), "used twice"),
+        (OUT_B.to_owned(), "used twice"),
+        (IN_A.to_owned(), "also an input flow"),
+        (OUT_A.to_uppercase(), "not a lowercase UUID"),
+    ] {
+        let mut w = v.clone();
+        w["outputs"][0]["mergedFlow"] = json!(merged);
+        assert_invalid(w, "outputs[0].mergedFlow", reason);
+    }
+
+    // A merged id is unique across outputs too.
+    v["outputs"][0]["mergedFlow"] = json!(id(0x50));
+    parse(v.clone()).unwrap().validate().unwrap();
+    let mut second = v["outputs"][0].clone();
+    second["name"] = json!("mono");
+    second["layout"] = json!(["C"]);
+    second["preset"] = json!("bs775-3_2-to-1_0");
+    second["flows"] = json!([id(0x60), id(0x50)]);
+    second["mergedFlow"] = json!(id(0x6f));
+    v["outputs"].as_array_mut().unwrap().push(second);
+    assert_invalid(v, "outputs[1].flows[1]", "used twice");
+}
+
+#[test]
+fn two_inputs_may_not_read_one_flow() {
+    let mut v = base();
+    let mut second = v["inputs"][0].clone();
+    second["name"] = json!("copy");
+    v["inputs"].as_array_mut().unwrap().push(second);
+    v["outputs"][0]["input"] = json!("main");
+    assert_invalid(v, "inputs[1].flow", "read by another input");
+}
+
+#[test]
+fn errors_name_the_item_they_concern() {
+    let mut v = base();
+    v["outputs"][0]["flows"] = json!(["x"]);
+    let e = invalid(v);
+    assert_eq!(e.at, "outputs[0].flows[0]");
+    assert!(e.reason.starts_with("output \"stereo\": "), "{e}");
+    let mut v = base();
+    v["inputs"][0]["channels"] = json!(2);
+    let e = invalid(v);
+    assert_eq!(e.at, "inputs[0].layout");
+    assert!(e.reason.starts_with("input \"main\": "), "{e}");
+}
+
+#[test]
+fn registry_url_and_dns_sd_domain_are_checked() {
+    for ok in [
+        "http://registry:8010",
+        "https://registry.example.com/x-nmos/registration/v1.3",
+        "http://10.0.0.1:80",
+        "http://[fd00::1]:8010/",
+    ] {
+        let mut v = base();
+        v["nmos"] = json!({ "registry": { "url": ok, "dnsSdDomain": "example.com." } });
+        parse(v).unwrap().validate().unwrap();
+    }
+    for bad in [
+        "registry:8010",
+        "ftp://registry",
+        "http://",
+        "http://reg istry",
+        "http://registry:0",
+        "http://registry:65536",
+        "http://registry:80x",
+        "http://-registry",
+        "http://[fd00::1",
+        "http://registry/a b",
+    ] {
+        let mut v = base();
+        v["nmos"] = json!({ "registry": { "url": bad } });
+        assert_invalid(v, "nmos.registry.url", "not an http or https URL");
+    }
+    for bad in ["exa mple.com", "-a.com", "a..com", ".", &"a".repeat(64)] {
+        let mut v = base();
+        v["nmos"] = json!({ "registry": { "dnsSdDomain": bad } });
+        assert_invalid(v, "nmos.registry.dnsSdDomain", "not a DNS name");
+    }
 }
 
 #[test]
 fn preset_matrix_and_source_combinations() {
     let mut v = base();
     v["outputs"][0]["matrix"] = json!([[1, 0, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0]]);
-    assert_invalid(v.clone(), "outputs[stereo]", "mutually exclusive");
+    assert_invalid(v.clone(), "outputs[0]", "mutually exclusive");
     let o = v["outputs"][0].as_object_mut().unwrap();
     o.remove("preset");
     o.remove("lfe");
     let folds = parse(v.clone()).unwrap().validate().unwrap();
     assert_eq!(folds[0].consumed, [0, 1]);
     v["outputs"][0].as_object_mut().unwrap().remove("matrix");
-    assert_invalid(v.clone(), "outputs[stereo]", "preset or matrix is required");
+    assert_invalid(v.clone(), "outputs[0]", "preset or matrix is required");
 
     v["outputs"][0]["preset"] = json!("shuffle");
     assert_invalid(
         v.clone(),
-        "outputs[stereo].source",
+        "outputs[0].source",
         "required with preset shuffle",
     );
     v["outputs"][0]["source"] = json!([6, 7]);
     parse(v.clone()).unwrap().validate().unwrap();
     v["outputs"][0]["source"] = json!([6, 8]);
-    assert_invalid(v.clone(), "outputs[stereo]", "input channel 8");
+    assert_invalid(v.clone(), "outputs[0]", "input channel 8");
     v["outputs"][0]["preset"] = json!("select");
-    assert_invalid(v.clone(), "outputs[stereo].source", "preset shuffle only");
+    assert_invalid(v.clone(), "outputs[0].source", "preset shuffle only");
     v["outputs"][0].as_object_mut().unwrap().remove("source");
     parse(v).unwrap().validate().unwrap();
 }
@@ -309,29 +405,29 @@ fn preset_matrix_and_source_combinations() {
 fn preset_applicability_is_checked() {
     let mut v = base();
     v["outputs"][0]["layout"] = json!(["L", "R", "C"]);
-    assert_invalid(v, "outputs[stereo]", "bs775-3_2-to-2_0 produces [L, R]");
+    assert_invalid(v, "outputs[0]", "bs775-3_2-to-2_0 produces [L, R]");
     let mut v = base();
     v["outputs"][0]["preset"] = json!("ac4-7_1-to-5_1");
     v["outputs"][0]["layout"] = json!(["L", "R", "C", "LFE", "Ls", "Rs"]);
     v["outputs"][0].as_object_mut().unwrap().remove("lfe");
-    assert_invalid(v, "outputs[stereo]", "reads channel Lss");
+    assert_invalid(v, "outputs[0]", "reads channel Lss");
     let mut v = base();
     v["outputs"][0]["preset"] = json!("bs775-3_2-to-3_0");
     v["outputs"][0]["layout"] = json!(["L", "R", "C"]);
     v["outputs"][0]["lfe"] = json!({ "include": { "gainDb": -10 } });
-    assert_invalid(v, "outputs[stereo]", "1/0 and 2/0 outputs only");
+    assert_invalid(v, "outputs[0]", "1/0 and 2/0 outputs only");
 }
 
 #[test]
 fn gain_limits_are_checked() {
     let mut v = base();
     v["outputs"][0]["gainDb"] = json!(200);
-    assert_invalid(v, "outputs[stereo]", "exceeds");
+    assert_invalid(v, "outputs[0]", "exceeds");
     let mut v = base();
     v["outputs"][0]["preset"] = Value::Null;
     v["outputs"][0].as_object_mut().unwrap().remove("lfe");
     v["outputs"][0]["matrix"] = json!([[2e6, 0, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0]]);
-    assert_invalid(v, "outputs[stereo]", "exceeds");
+    assert_invalid(v, "outputs[0]", "exceeds");
 }
 
 #[test]
