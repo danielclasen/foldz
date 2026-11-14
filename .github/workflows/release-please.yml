@@ -143,3 +143,53 @@ jobs:
           sha256sum -c "foldz-$VERSION-SHA256SUMS"
           chmod +x "foldz-$VERSION-x86_64-linux"
           test "$("./foldz-$VERSION-x86_64-linux" --version)" = "foldz $VERSION"
+
+  # The chart runs the image tagged appVersion, so it is published only
+  # once that image is.
+  chart:
+    needs: [release-please, image]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.release-please.outputs.version }}
+      CHARTS: oci://ghcr.io/${{ github.repository }}/charts
+      HELM_VERSION: v4.2.2
+      HELM_SHA256: 9adafecab4d406853bba163a70e9f104f47dbbf65ce24b7653bae7e36150bcb6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          persist-credentials: false
+      - name: Install helm
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo helm.tar.gz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          echo "$HELM_SHA256  helm.tar.gz" | sha256sum -c -
+          tar -xzf helm.tar.gz -C bin --strip-components=1 linux-amd64/helm
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # The image the chart runs by default is the one tagged appVersion,
+      # so both have to be the release's version.
+      - name: Check the chart carries the release version
+        run: |
+          chart=$(helm show chart charts/foldz)
+          grep -qx "version: $VERSION" <<<"$chart"
+          grep -qx "appVersion: $VERSION" <<<"$chart"
+      - name: Package and push the chart
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          helm package charts/foldz --destination dist
+          helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
+          helm push "dist/foldz-$VERSION.tgz" "$CHARTS"
+          helm registry logout ghcr.io
+      # Workflow logs are no evidence the published artefact is right.
+      - name: Pull the published chart and render it
+        run: |
+          helm pull "$CHARTS/foldz" --version "$VERSION" --destination pulled
+          helm template foldz "pulled/foldz-$VERSION.tgz" \
+            -f charts/foldz/ci/base.yaml > rendered.yaml
+          grep -q "image: ghcr.io/${GITHUB_REPOSITORY}:$VERSION\$" rendered.yaml
