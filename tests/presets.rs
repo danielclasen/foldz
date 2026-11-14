@@ -13,7 +13,7 @@ use foldz::presets::{
 };
 
 const IN_5_1: [&str; 6] = ["L", "R", "C", "LFE", "Ls", "Rs"];
-const IN_7_1: [&str; 8] = ["L", "R", "C", "LFE", "Ls", "Rs", "Lb", "Rb"];
+const IN_7_1: [&str; 8] = ["L", "R", "C", "LFE", "Lss", "Rss", "Lrs", "Rrs"];
 
 fn layout(names: &[&str]) -> Layout {
     Layout::parse(names).unwrap()
@@ -235,8 +235,9 @@ fn a52_ltrt() {
 #[test]
 fn ac4_7_1_to_5_1() {
     let f = run(Preset::Ac4To5_1, &IN_7_1, &IN_5_1, None).unwrap();
-    // Table 219 row 3/4/0.x: Ls' = 0.707 Ls + 0.707 Lb, Rs' = 0.707 Rs +
-    // 0.707 Rb; L, R, C, LFE at 1.
+    // Table 219 row 3/4/0.x, AC-4 side surrounds Ls/Rs on Lss/Rss and back
+    // surrounds Lb/Rb on Lrs/Rrs: Ls' = 0.707 Lss + 0.707 Lrs, Rs' = 0.707
+    // Rss + 0.707 Rrs; L, R, C, LFE at 1.
     assert_gains(
         &f,
         &[
@@ -254,7 +255,7 @@ fn ac4_7_1_to_5_1() {
 #[test]
 fn ac4_bs775_7_1_to_2_0() {
     let f = run(Preset::Ac4Bs775To2_0, &IN_7_1, &["L", "R"], None).unwrap();
-    // L = 1.0 L + 0.7071 C + 0.7071 * (0.707 Ls + 0.707 Lb), R likewise.
+    // L = 1.0 L + 0.7071 C + 0.7071 * (0.707 Lss + 0.707 Lrs), R likewise.
     let s = (0.7071f64 * 0.707) as f32;
     assert_gains(
         &f,
@@ -415,7 +416,7 @@ fn input_must_carry_every_channel_the_preset_reads() {
     assert!(
         run(
             Preset::Ac4Bs775To2_0,
-            &["L", "R", "C", "Ls", "Rs", "Lb", "Rb"],
+            &["L", "R", "C", "Lss", "Rss", "Lrs", "Rrs"],
             &["L", "R"],
             None
         )
@@ -504,13 +505,13 @@ fn select_copies_by_label() {
         fold(
             Mapping::Select,
             &layout(&IN_5_1),
-            &layout(&["Lb"]),
+            &layout(&["Lrs"]),
             None,
             0.0
         ),
         Err(FoldError::MissingInput {
             mapping: "select".into(),
-            label: Label::Lb
+            label: Label::Lrs
         })
     );
     assert_eq!(

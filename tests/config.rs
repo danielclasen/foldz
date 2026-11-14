@@ -314,7 +314,7 @@ fn preset_applicability_is_checked() {
     v["outputs"][0]["preset"] = json!("ac4-7_1-to-5_1");
     v["outputs"][0]["layout"] = json!(["L", "R", "C", "LFE", "Ls", "Rs"]);
     v["outputs"][0].as_object_mut().unwrap().remove("lfe");
-    assert_invalid(v, "outputs[stereo]", "reads channel Lb");
+    assert_invalid(v, "outputs[stereo]", "reads channel Lss");
     let mut v = base();
     v["outputs"][0]["preset"] = json!("bs775-3_2-to-3_0");
     v["outputs"][0]["layout"] = json!(["L", "R", "C"]);

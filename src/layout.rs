@@ -1,54 +1,55 @@
 //! Channel labels and the layouts of inputs and outputs.
+//!
+//! Labels are the channel symbols of AMWA IS-04 v1.3
+//! `APIs/schemas/source_audio.json` (from VSF TR-03 Appendix A), written
+//! exactly as there, plus `-` for an unused channel.
 
 use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer};
 
-/// Most channels in one layout. Unlabelled channels take the NMOS channel
-/// symbols `U01` to `U64`.
+/// Most channels in one layout: the IS-04 undefined-channel symbols run
+/// from `U01` to `U64`.
 pub const MAX_CHANNELS: usize = 64;
 
-/// What one channel of a layout carries.
+/// One IS-04 v1.3 `source_audio.json` channel symbol, or unused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Label {
-    /// Left.
     L,
-    /// Right.
     R,
-    /// Centre.
     C,
-    /// Low-frequency effects.
     Lfe,
-    /// Left surround; the side surround of a 3/4 layout.
     Ls,
-    /// Right surround; the side surround of a 3/4 layout.
     Rs,
-    /// Left side surround.
     Lss,
-    /// Right side surround.
     Rss,
-    /// Left rear surround.
     Lrs,
-    /// Right rear surround.
     Rrs,
-    /// Left back surround of a 3/4 layout.
-    Lb,
-    /// Right back surround of a 3/4 layout.
-    Rb,
-    /// Single surround of a 2/1 or 3/1 layout.
-    S,
-    /// Left total of a matrix-encoded Lt/Rt pair.
+    Lc,
+    Rc,
+    Cs,
+    Hi,
+    Vin,
+    M1,
+    M2,
     Lt,
-    /// Right total of a matrix-encoded Lt/Rt pair.
     Rt,
-    /// Unused or unlabelled, written `-`.
+    Lst,
+    Rst,
+    S,
+    /// Numbered source channel `NSCnnn`, 0 to 128 per the schema's pattern
+    /// `^NSC(0[0-9][0-9]|1[0-1][0-9]|12[0-8])$`.
+    Nsc(u8),
+    /// Undefined channel `Unn`, 1 to 64.
+    U(u8),
+    /// Unused, written `-`; not an IS-04 symbol.
     Unused,
 }
 
 impl Label {
-    /// Every label, in declaration order.
-    pub const ALL: [Label; 16] = [
+    /// The symbols of the schema's enum, in its order.
+    pub const NAMED: [Label; 22] = [
         Label::L,
         Label::R,
         Label::C,
@@ -59,17 +60,22 @@ impl Label {
         Label::Rss,
         Label::Lrs,
         Label::Rrs,
-        Label::Lb,
-        Label::Rb,
-        Label::S,
+        Label::Lc,
+        Label::Rc,
+        Label::Cs,
+        Label::Hi,
+        Label::Vin,
+        Label::M1,
+        Label::M2,
         Label::Lt,
         Label::Rt,
-        Label::Unused,
+        Label::Lst,
+        Label::Rst,
+        Label::S,
     ];
 
-    /// The label as written in a layout.
-    pub fn as_str(self) -> &'static str {
-        match self {
+    fn name(self) -> Option<&'static str> {
+        Some(match self {
             Label::L => "L",
             Label::R => "R",
             Label::C => "C",
@@ -80,30 +86,64 @@ impl Label {
             Label::Rss => "Rss",
             Label::Lrs => "Lrs",
             Label::Rrs => "Rrs",
-            Label::Lb => "Lb",
-            Label::Rb => "Rb",
-            Label::S => "S",
+            Label::Lc => "Lc",
+            Label::Rc => "Rc",
+            Label::Cs => "Cs",
+            Label::Hi => "HI",
+            Label::Vin => "VIN",
+            Label::M1 => "M1",
+            Label::M2 => "M2",
             Label::Lt => "Lt",
             Label::Rt => "Rt",
+            Label::Lst => "Lst",
+            Label::Rst => "Rst",
+            Label::S => "S",
             Label::Unused => "-",
-        }
+            Label::Nsc(_) | Label::U(_) => return None,
+        })
     }
 }
 
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+        match self {
+            Label::Nsc(n) => write!(f, "NSC{n:03}"),
+            Label::U(n) => write!(f, "U{n:02}"),
+            named => f.write_str(named.name().expect("named label")),
+        }
+    }
+}
+
+/// `digits` as a number when it is exactly `width` ASCII digits.
+fn fixed_digits(digits: &str, width: usize) -> Option<u8> {
+    if digits.len() == width && digits.bytes().all(|b| b.is_ascii_digit()) {
+        digits.parse().ok()
+    } else {
+        None
     }
 }
 
 impl FromStr for Label {
     type Err = LayoutError;
 
-    /// Parses a label as written in a layout; case matters.
+    /// Parses a symbol as IS-04 writes it; case matters.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Label::ALL
-            .into_iter()
-            .find(|label| label.as_str() == s)
+        let numbered = if let Some(d) = s.strip_prefix("NSC") {
+            fixed_digits(d, 3).filter(|n| *n <= 128).map(Label::Nsc)
+        } else if let Some(d) = s.strip_prefix('U') {
+            fixed_digits(d, 2)
+                .filter(|n| (1..=64).contains(n))
+                .map(Label::U)
+        } else {
+            None
+        };
+        numbered
+            .or_else(|| {
+                Label::NAMED
+                    .into_iter()
+                    .chain([Label::Unused])
+                    .find(|label| label.name() == Some(s))
+            })
             .ok_or_else(|| LayoutError::UnknownLabel(s.to_owned()))
     }
 }
@@ -130,8 +170,11 @@ impl fmt::Display for LayoutError {
             }
             LayoutError::UnknownLabel(s) => write!(
                 f,
-                "unknown channel label {s:?}, expected one of {}",
-                Label::ALL.map(Label::as_str).join(", ")
+                "unknown channel label {s:?}, expected an IS-04 v1.3 channel symbol \
+                 ({}, NSC000 to NSC128, U01 to U64) or -",
+                Label::NAMED
+                    .map(|l| l.name().expect("named label"))
+                    .join(", ")
             ),
             LayoutError::Duplicate(label) => {
                 write!(f, "channel label {label} appears more than once")
@@ -194,7 +237,7 @@ impl Layout {
 
 impl fmt::Display for Layout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let names: Vec<&str> = self.0.iter().map(|l| l.as_str()).collect();
+        let names: Vec<String> = self.0.iter().map(Label::to_string).collect();
         write!(f, "[{}]", names.join(", "))
     }
 }
@@ -211,45 +254,65 @@ mod tests {
     use super::*;
 
     #[test]
-    fn labels_round_trip_through_their_written_form() {
-        for label in Label::ALL {
-            assert_eq!(label.as_str().parse::<Label>(), Ok(label));
+    fn symbols_are_the_is04_v1_3_enum() {
+        // source_audio.json, "symbol", enum in schema order.
+        let schema = [
+            "L", "R", "C", "LFE", "Ls", "Rs", "Lss", "Rss", "Lrs", "Rrs", "Lc", "Rc", "Cs", "HI",
+            "VIN", "M1", "M2", "Lt", "Rt", "Lst", "Rst", "S",
+        ];
+        let written: Vec<String> = Label::NAMED.iter().map(Label::to_string).collect();
+        assert_eq!(written, schema);
+        for name in schema {
+            assert_eq!(name.parse::<Label>().unwrap().to_string(), name);
         }
     }
 
     #[test]
-    fn written_forms_are_the_ones_configs_use() {
-        let layout =
-            Layout::parse(&["L", "R", "C", "LFE", "Ls", "Rs", "Lss", "Rss", "-", "-"]).unwrap();
-        assert_eq!(
-            layout.labels(),
-            [
-                Label::L,
-                Label::R,
-                Label::C,
-                Label::Lfe,
-                Label::Ls,
-                Label::Rs,
-                Label::Lss,
-                Label::Rss,
-                Label::Unused,
-                Label::Unused
-            ]
-        );
-        assert_eq!(layout.position(Label::Lfe), Some(3));
-        assert_eq!(layout.position(Label::Lb), None);
-        assert_eq!(layout.to_string(), "[L, R, C, LFE, Ls, Rs, Lss, Rss, -, -]");
+    fn numbered_symbols_follow_the_schema_patterns() {
+        for (ok, label) in [
+            ("NSC000", Label::Nsc(0)),
+            ("NSC001", Label::Nsc(1)),
+            ("NSC128", Label::Nsc(128)),
+            ("U01", Label::U(1)),
+            ("U64", Label::U(64)),
+        ] {
+            assert_eq!(ok.parse(), Ok(label));
+            assert_eq!(label.to_string(), ok);
+        }
+        for bad in [
+            "NSC129", "NSC1", "NSC0001", "NSC+01", "nsc001", "U00", "U65", "U1", "U001", "U+1",
+        ] {
+            assert_eq!(
+                bad.parse::<Label>(),
+                Err(LayoutError::UnknownLabel(bad.into())),
+                "{bad}"
+            );
+        }
     }
 
     #[test]
-    fn labels_are_case_sensitive() {
+    fn non_is04_names_are_refused() {
+        for bad in ["Lb", "Rb", "lfe", "LS", "Hi", "X", ""] {
+            assert_eq!(
+                bad.parse::<Label>(),
+                Err(LayoutError::UnknownLabel(bad.into())),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn layouts_parse_and_print_as_written() {
+        let layout = Layout::parse(&[
+            "L", "R", "C", "LFE", "Lss", "Rss", "Lrs", "Rrs", "-", "NSC007", "U12",
+        ])
+        .unwrap();
+        assert_eq!(layout.position(Label::Lfe), Some(3));
+        assert_eq!(layout.position(Label::Nsc(7)), Some(9));
+        assert_eq!(layout.position(Label::Ls), None);
         assert_eq!(
-            "lfe".parse::<Label>(),
-            Err(LayoutError::UnknownLabel("lfe".into()))
-        );
-        assert_eq!(
-            "LS".parse::<Label>(),
-            Err(LayoutError::UnknownLabel("LS".into()))
+            layout.to_string(),
+            "[L, R, C, LFE, Lss, Rss, Lrs, Rrs, -, NSC007, U12]"
         );
     }
 
@@ -259,6 +322,10 @@ mod tests {
         assert_eq!(
             Layout::parse(&["L", "R", "L"]),
             Err(LayoutError::Duplicate(Label::L))
+        );
+        assert_eq!(
+            Layout::parse(&["U03", "U03"]),
+            Err(LayoutError::Duplicate(Label::U(3)))
         );
     }
 
@@ -277,9 +344,9 @@ mod tests {
     fn deserializing_validates() {
         let ok: Layout = serde_json::from_str(r#"["L","R"]"#).unwrap();
         assert_eq!(ok.labels(), [Label::L, Label::R]);
-        let err = serde_json::from_str::<Layout>(r#"["L","X"]"#).unwrap_err();
+        let err = serde_json::from_str::<Layout>(r#"["L","Lb"]"#).unwrap_err();
         assert!(
-            err.to_string().contains("unknown channel label \"X\""),
+            err.to_string().contains("unknown channel label \"Lb\""),
             "{err}"
         );
         let err = serde_json::from_str::<Layout>(r#"["R","R"]"#).unwrap_err();

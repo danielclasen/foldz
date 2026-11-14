@@ -17,7 +17,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::layout::{Label, Layout};
 
-use Label::{C, L, Lb, Ls, Lt, R, Rb, Rs, Rt, S};
+use Label::{C, L, Lrs, Ls, Lss, Lt, R, Rrs, Rs, Rss, Rt, S};
 
 /// One downmix as published: `rows[j][i]` is the gain from source channel
 /// `inputs[i]` to output channel `outputs[j]`.
@@ -204,11 +204,18 @@ impl Slev {
 // ETSI TS 103 190-1 V1.4.1 (2025-07), AC-4 part 1, clause 6.2.17.5
 // "Downmixing from seven channels into five channels", Table 219, row
 // 3/4/0.x: r3,3 = r4,4 = 0.707 and r3,7 = r4,8 = 0.707, with L, C, R
-// (r0,0, r1,1, r2,2) and LFE (r18,18) at 1:
-//   Ls' = 0.707 * Ls + 0.707 * Lb ; Rs' = 0.707 * Rs + 0.707 * Rb.
-// AC-4 indexes channels L 0, C 1, R 2, Ls 3, Rs 4, Lb 7, Rb 8, LFE 18;
-// the rows below are in foldz's channel order.
-const AC4_7_1_INPUTS: [Label; 8] = [L, R, C, Label::Lfe, Ls, Rs, Lb, Rb];
+// (r0,0, r1,1, r2,2) and LFE (r18,18) at 1. AC-4 indexes channels L 0,
+// C 1, R 2, Ls 3, Rs 4, Lb 7, Rb 8, LFE 18, where in 3/4/0 Ls and Rs are
+// the side surrounds and Lb and Rb the back surrounds.
+//
+// Layouts carry IS-04 v1.3 channel symbols only, which have no Lb or Rb.
+// A 7.1 input is labelled as SMPTE 7.1 practice labels it, side
+// surrounds Lss/Rss and rear surrounds Lrs/Rrs, so AC-4 Ls/Rs (index
+// 3/4) read Lss/Rss and AC-4 Lb/Rb (index 7/8) read Lrs/Rrs. The 5.1
+// output's surrounds are Ls/Rs, the symbols of a 3/2 layout:
+//   Ls' = 0.707 * Lss + 0.707 * Lrs ; Rs' = 0.707 * Rss + 0.707 * Rrs.
+// The rows below are in foldz's channel order.
+const AC4_7_1_INPUTS: [Label; 8] = [L, R, C, Label::Lfe, Lss, Rss, Lrs, Rrs];
 const AC4_5_1_OUTPUTS: [Label; 6] = [L, R, C, Label::Lfe, Ls, Rs];
 const AC4_7_1_TO_5_1: [[f64; 8]; 6] = [
     [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -396,9 +403,10 @@ pub enum Lfe {
     /// Leave LFE out, as BS.775-4 Table 2 and the A/52:2018 clause 7.8.2
     /// equations do.
     Drop,
-    /// Add LFE to every output channel at `gainDb`. Offered for 1/0 and
-    /// 2/0 outputs only, the output modes A/52:2018 Annex E clause 3.9
-    /// mixes LFE into.
+    /// Add LFE to every output channel at `gainDb`. The output's own
+    /// `gainDb` scales the whole matrix after that, so LFE reaches the
+    /// output at the sum of both. Offered for 1/0 and 2/0 outputs only,
+    /// the output modes A/52:2018 Annex E clause 3.9 mixes LFE into.
     Include(LfeInclude),
 }
 
@@ -480,7 +488,12 @@ pub enum FoldError {
 
 impl fmt::Display for FoldError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let labels = |v: &[Label]| v.iter().map(|l| l.as_str()).collect::<Vec<_>>().join(", ");
+        let labels = |v: &[Label]| {
+            v.iter()
+                .map(Label::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         match self {
             FoldError::MissingInput { mapping, label } => {
                 write!(
