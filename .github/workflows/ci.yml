@@ -101,3 +101,33 @@ jobs:
             exit 1
           fi
           dist/foldz --version | grep -q '^foldz '
+
+  chart:
+    runs-on: ubuntu-24.04
+    env:
+      HELM_VERSION: v4.2.2
+      HELM_SHA256: 9adafecab4d406853bba163a70e9f104f47dbbf65ce24b7653bae7e36150bcb6
+      HELM_UNITTEST_VERSION: v1.2.1
+      KUBECONFORM_VERSION: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm, helm-unittest and kubeconform
+        run: |
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo helm.tar.gz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          echo "$HELM_SHA256  helm.tar.gz" | sha256sum -c -
+          tar -xzf helm.tar.gz -C "$bin" --strip-components=1 linux-amd64/helm
+          curl -fsSLo kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          echo "$KUBECONFORM_SHA256  kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf kubeconform.tar.gz -C "$bin" kubeconform
+          "$bin/helm" plugin install https://github.com/helm-unittest/helm-unittest.git \
+            --version "$HELM_UNITTEST_VERSION" --verify=false
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: Lint, unit-test and validate the chart
+        run: scripts/chart-test.sh
