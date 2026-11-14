@@ -201,6 +201,12 @@ Swap off and `vm.compact_unevictable_allowed=0` are deployment
 requirements of the samplez engine; with the latter at 1, memory
 compaction moves locked pages, which costs the audio thread page faults.
 
+## Running it on Kubernetes
+
+The Helm chart in [`charts/foldz`](charts/foldz/README.md) runs the image
+with the config rendered from its values; each release publishes it as
+`oci://ghcr.io/danielclasen/foldz/charts/foldz` with the release's version.
+
 ## Configuration
 
 One JSON file, `foldz --config <file>`. Unknown fields are refused.

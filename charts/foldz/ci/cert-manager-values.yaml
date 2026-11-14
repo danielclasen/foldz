@@ -1,0 +1,13 @@
+# The product serves TLS itself from a certificate cert-manager issues.
+# Renders only with cert-manager.io/v1/Certificate among the API versions.
+auth:
+  mode: token
+  token:
+    existingSecret: foldz-api-token
+tls:
+  mode: certManager
+  certManager:
+    issuerRef:
+      name: cluster-ca
+      kind: ClusterIssuer
+    dnsNames: [foldz.example.org]

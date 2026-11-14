@@ -1,0 +1,33 @@
+# Golden renders of every template, one per deployment mode. A change to any
+# rendered manifest shows up as a snapshot diff; review it, then refresh the
+# snapshots with `helm unittest -u charts/foldz`.
+suite: deployment modes
+release:
+  name: r
+  namespace: audio
+chart:
+  version: 1.2.3
+  appVersion: 1.2.3
+tests:
+  - it: renders auth none, plain HTTP, in-cluster only
+    values: [../ci/base.yaml, ../ci/none-values.yaml]
+    asserts:
+      - matchSnapshot: {}
+  - it: renders plain HTTP behind a TLS-terminating ingress with token auth
+    values: [../ci/base.yaml, ../ci/mesh-values.yaml]
+    asserts:
+      - matchSnapshot: {}
+  - it: renders TLS served by the product from an existing Secret
+    values: [../ci/base.yaml, ../ci/existing-secret-values.yaml]
+    asserts:
+      - matchSnapshot: {}
+  - it: renders TLS served by the product from a cert-manager Certificate
+    values: [../ci/base.yaml, ../ci/cert-manager-values.yaml]
+    capabilities:
+      apiVersions: [cert-manager.io/v1/Certificate]
+    asserts:
+      - matchSnapshot: {}
+  - it: renders the oauth2-proxy sidecar, a CSI domain and the NetworkPolicy
+    values: [../ci/base.yaml, ../ci/proxy-values.yaml]
+    asserts:
+      - matchSnapshot: {}

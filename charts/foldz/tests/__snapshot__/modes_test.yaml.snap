@@ -1,0 +1,1971 @@
+renders TLS served by the product from a cert-manager Certificate:
+  1: |
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      dnsNames:
+        - r-foldz
+        - r-foldz.audio
+        - r-foldz.audio.svc
+        - foldz.example.org
+      issuerRef:
+        group: cert-manager.io
+        kind: ClusterIssuer
+        name: cluster-ca
+      secretName: r-foldz-tls
+  2: |
+    apiVersion: v1
+    data:
+      config.json: |
+        {
+          "api": {
+            "allowedHosts": [
+              "r-foldz",
+              "r-foldz.audio",
+              "r-foldz.audio.svc"
+            ],
+            "allowedOrigins": []
+          },
+          "auth": {
+            "mode": "token",
+            "token": {
+              "file": "/var/run/secrets/foldz/token/token"
+            }
+          },
+          "domains": [
+            {
+              "name": "a",
+              "path": "/mxl/a"
+            }
+          ],
+          "engine": {
+            "blockSize": 48,
+            "readerMarginSamples": 576,
+            "sampleRate": 48000
+          },
+          "inputs": [
+            {
+              "channels": 8,
+              "flow": "7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55",
+              "layout": [
+                "L",
+                "R",
+                "C",
+                "LFE",
+                "Ls",
+                "Rs",
+                "-",
+                "-"
+              ],
+              "name": "main"
+            }
+          ],
+          "listeners": {
+            "api": {
+              "bind": "0.0.0.0",
+              "port": 8080,
+              "tls": {
+                "certFile": "/var/run/secrets/foldz/tls/tls.crt",
+                "keyFile": "/var/run/secrets/foldz/tls/tls.key",
+                "mode": "files"
+              }
+            },
+            "nmos": {
+              "bind": "0.0.0.0",
+              "port": 8081
+            },
+            "ops": {
+              "bind": "0.0.0.0",
+              "port": 9090
+            }
+          },
+          "mxl": {
+            "libraryPath": "/opt/mxl/lib/libmxl.so"
+          },
+          "nmos": {
+            "enabled": false
+          },
+          "outputs": [
+            {
+              "flows": [
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11"
+              ],
+              "gainDb": 0,
+              "label": "Programme stereo",
+              "layout": [
+                "L",
+                "R"
+              ],
+              "lfe": "drop",
+              "name": "stereo",
+              "preset": "bs775-3_2-to-2_0"
+            }
+          ],
+          "rt": {
+            "enabled": true,
+            "priority": 70,
+            "rtCpu": "auto"
+          }
+        }
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  3: |
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+  4: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  5: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ports:
+        - name: https
+          port: 8080
+          protocol: TCP
+          targetPort: api
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  6: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-nmos
+    spec:
+      ports:
+        - name: http-nmos
+          port: 8081
+          protocol: TCP
+          targetPort: nmos
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  7: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-ops
+    spec:
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  8: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-headless
+    spec:
+      clusterIP: None
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      publishNotReadyAddresses: true
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+  9: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      podManagementPolicy: Parallel
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      serviceName: r-foldz-headless
+      template:
+        metadata:
+          annotations:
+            checksum/config: 63b01902cd3c23c962f4c3b3f3c8d90dd85e3030d57a06e054f5d006f001bde4
+          labels:
+            app.kubernetes.io/component: audio
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: foldz
+            app.kubernetes.io/version: 1.2.3
+            helm.sh/chart: foldz-1.2.3
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /etc/foldz/config.json
+              env:
+                - name: SAMPLEZ_CPU_REQUEST_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: requests.cpu
+                - name: SAMPLEZ_CPU_LIMIT_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: limits.cpu
+              image: ghcr.io/danielclasen/foldz:1.2.3
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 5
+              name: foldz
+              ports:
+                - containerPort: 8080
+                  name: api
+                  protocol: TCP
+                - containerPort: 8081
+                  name: nmos
+                  protocol: TCP
+                - containerPort: 9090
+                  name: ops
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 2
+                httpGet:
+                  path: /readyz
+                  port: ops
+                periodSeconds: 2
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 512Mi
+                requests:
+                  cpu: "2"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: true
+                capabilities:
+                  add:
+                    - SYS_NICE
+                    - IPC_LOCK
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 2
+              volumeMounts:
+                - mountPath: /etc/foldz
+                  name: config
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /mxl/a
+                  name: mxl-0
+                - mountPath: /var/run/secrets/foldz/token
+                  name: token
+                  readOnly: true
+                - mountPath: /var/run/secrets/foldz/tls
+                  name: tls
+                  readOnly: true
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: r-foldz
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - configMap:
+                name: r-foldz
+              name: config
+            - emptyDir: {}
+              name: tmp
+            - hostPath:
+                path: /dev/shm/mxl/a
+                type: Directory
+              name: mxl-0
+            - name: token
+              secret:
+                items:
+                  - key: token
+                    path: token
+                secretName: foldz-api-token
+            - name: tls
+              secret:
+                items:
+                  - key: tls.crt
+                    path: tls.crt
+                  - key: tls.key
+                    path: tls.key
+                secretName: r-foldz-tls
+      updateStrategy:
+        type: RollingUpdate
+renders TLS served by the product from an existing Secret:
+  1: |
+    apiVersion: v1
+    data:
+      config.json: |
+        {
+          "api": {
+            "allowedHosts": [
+              "r-foldz",
+              "r-foldz.audio",
+              "r-foldz.audio.svc",
+              "foldz.example.org"
+            ],
+            "allowedOrigins": [
+              "https://foldz.example.org:8080"
+            ]
+          },
+          "auth": {
+            "mode": "token",
+            "token": {
+              "file": "/var/run/secrets/foldz/token/api-token"
+            }
+          },
+          "domains": [
+            {
+              "name": "a",
+              "path": "/mxl/a"
+            }
+          ],
+          "engine": {
+            "blockSize": 48,
+            "readerMarginSamples": 576,
+            "sampleRate": 48000
+          },
+          "inputs": [
+            {
+              "channels": 8,
+              "flow": "7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55",
+              "layout": [
+                "L",
+                "R",
+                "C",
+                "LFE",
+                "Ls",
+                "Rs",
+                "-",
+                "-"
+              ],
+              "name": "main"
+            }
+          ],
+          "listeners": {
+            "api": {
+              "bind": "0.0.0.0",
+              "port": 8080,
+              "tls": {
+                "certFile": "/var/run/secrets/foldz/tls/tls.crt",
+                "keyFile": "/var/run/secrets/foldz/tls/tls.key",
+                "mode": "files"
+              }
+            },
+            "nmos": {
+              "bind": "0.0.0.0",
+              "port": 8081,
+              "tls": {
+                "certFile": "/var/run/secrets/foldz/tls/tls.crt",
+                "keyFile": "/var/run/secrets/foldz/tls/tls.key",
+                "mode": "files"
+              }
+            },
+            "ops": {
+              "bind": "0.0.0.0",
+              "port": 9090
+            }
+          },
+          "mxl": {
+            "libraryPath": "/opt/mxl/lib/libmxl.so"
+          },
+          "nmos": {
+            "enabled": false
+          },
+          "outputs": [
+            {
+              "flows": [
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11"
+              ],
+              "gainDb": 0,
+              "label": "Programme stereo",
+              "layout": [
+                "L",
+                "R"
+              ],
+              "lfe": "drop",
+              "name": "stereo",
+              "preset": "bs775-3_2-to-2_0"
+            }
+          ],
+          "rt": {
+            "enabled": true,
+            "priority": 70,
+            "rtCpu": "auto"
+          }
+        }
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  2: |
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+  3: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  4: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ports:
+        - name: https
+          port: 8080
+          protocol: TCP
+          targetPort: api
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: LoadBalancer
+  5: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-nmos
+    spec:
+      ports:
+        - name: https-nmos
+          port: 8081
+          protocol: TCP
+          targetPort: nmos
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  6: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-ops
+    spec:
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  7: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-headless
+    spec:
+      clusterIP: None
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      publishNotReadyAddresses: true
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+  8: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      podManagementPolicy: Parallel
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      serviceName: r-foldz-headless
+      template:
+        metadata:
+          annotations:
+            checksum/config: fc813a25a991efa872080919bd2355620cedffa26cc1b06f0474662eb6a87b7f
+          labels:
+            app.kubernetes.io/component: audio
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: foldz
+            app.kubernetes.io/version: 1.2.3
+            helm.sh/chart: foldz-1.2.3
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /etc/foldz/config.json
+              env:
+                - name: SAMPLEZ_CPU_REQUEST_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: requests.cpu
+                - name: SAMPLEZ_CPU_LIMIT_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: limits.cpu
+              image: ghcr.io/danielclasen/foldz:1.2.3
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 5
+              name: foldz
+              ports:
+                - containerPort: 8080
+                  name: api
+                  protocol: TCP
+                - containerPort: 8081
+                  name: nmos
+                  protocol: TCP
+                - containerPort: 9090
+                  name: ops
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 2
+                httpGet:
+                  path: /readyz
+                  port: ops
+                periodSeconds: 2
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 512Mi
+                requests:
+                  cpu: "2"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: true
+                capabilities:
+                  add:
+                    - SYS_NICE
+                    - IPC_LOCK
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 2
+              volumeMounts:
+                - mountPath: /etc/foldz
+                  name: config
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /mxl/a
+                  name: mxl-0
+                - mountPath: /var/run/secrets/foldz/token
+                  name: token
+                  readOnly: true
+                - mountPath: /var/run/secrets/foldz/tls
+                  name: tls
+                  readOnly: true
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: r-foldz
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - configMap:
+                name: r-foldz
+              name: config
+            - emptyDir: {}
+              name: tmp
+            - hostPath:
+                path: /dev/shm/mxl/a
+                type: Directory
+              name: mxl-0
+            - name: token
+              secret:
+                items:
+                  - key: api-token
+                    path: api-token
+                secretName: foldz-api-token
+            - name: tls
+              secret:
+                items:
+                  - key: tls.crt
+                    path: tls.crt
+                  - key: tls.key
+                    path: tls.key
+                secretName: foldz-tls
+      updateStrategy:
+        type: RollingUpdate
+renders auth none, plain HTTP, in-cluster only:
+  1: |
+    apiVersion: v1
+    data:
+      config.json: |
+        {
+          "api": {
+            "allowedHosts": [
+              "r-foldz",
+              "r-foldz.audio",
+              "r-foldz.audio.svc"
+            ],
+            "allowedOrigins": []
+          },
+          "auth": {
+            "mode": "none"
+          },
+          "domains": [
+            {
+              "name": "a",
+              "path": "/mxl/a"
+            }
+          ],
+          "engine": {
+            "blockSize": 48,
+            "readerMarginSamples": 576,
+            "sampleRate": 48000
+          },
+          "inputs": [
+            {
+              "channels": 8,
+              "flow": "7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55",
+              "layout": [
+                "L",
+                "R",
+                "C",
+                "LFE",
+                "Ls",
+                "Rs",
+                "-",
+                "-"
+              ],
+              "name": "main"
+            }
+          ],
+          "listeners": {
+            "api": {
+              "bind": "0.0.0.0",
+              "port": 8080
+            },
+            "nmos": {
+              "bind": "0.0.0.0",
+              "port": 8081
+            },
+            "ops": {
+              "bind": "0.0.0.0",
+              "port": 9090
+            }
+          },
+          "mxl": {
+            "libraryPath": "/opt/mxl/lib/libmxl.so"
+          },
+          "nmos": {
+            "enabled": false
+          },
+          "outputs": [
+            {
+              "flows": [
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11"
+              ],
+              "gainDb": 0,
+              "label": "Programme stereo",
+              "layout": [
+                "L",
+                "R"
+              ],
+              "lfe": "drop",
+              "name": "stereo",
+              "preset": "bs775-3_2-to-2_0"
+            }
+          ],
+          "rt": {
+            "enabled": true,
+            "priority": 70,
+            "rtCpu": "auto"
+          }
+        }
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  2: |
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+  3: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  4: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ports:
+        - name: http
+          port: 8080
+          protocol: TCP
+          targetPort: api
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  5: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-nmos
+    spec:
+      ports:
+        - name: http-nmos
+          port: 8081
+          protocol: TCP
+          targetPort: nmos
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  6: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-ops
+    spec:
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  7: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-headless
+    spec:
+      clusterIP: None
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      publishNotReadyAddresses: true
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+  8: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      podManagementPolicy: Parallel
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      serviceName: r-foldz-headless
+      template:
+        metadata:
+          annotations:
+            checksum/config: d668cf1ee59dee53b681cea0320134cfbf6203b547db12ee26d9143887b59923
+          labels:
+            app.kubernetes.io/component: audio
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: foldz
+            app.kubernetes.io/version: 1.2.3
+            helm.sh/chart: foldz-1.2.3
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /etc/foldz/config.json
+              env:
+                - name: SAMPLEZ_CPU_REQUEST_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: requests.cpu
+                - name: SAMPLEZ_CPU_LIMIT_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: limits.cpu
+              image: ghcr.io/danielclasen/foldz:1.2.3
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 5
+              name: foldz
+              ports:
+                - containerPort: 8080
+                  name: api
+                  protocol: TCP
+                - containerPort: 8081
+                  name: nmos
+                  protocol: TCP
+                - containerPort: 9090
+                  name: ops
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 2
+                httpGet:
+                  path: /readyz
+                  port: ops
+                periodSeconds: 2
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 512Mi
+                requests:
+                  cpu: "2"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: true
+                capabilities:
+                  add:
+                    - SYS_NICE
+                    - IPC_LOCK
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 2
+              volumeMounts:
+                - mountPath: /etc/foldz
+                  name: config
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /mxl/a
+                  name: mxl-0
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: r-foldz
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - configMap:
+                name: r-foldz
+              name: config
+            - emptyDir: {}
+              name: tmp
+            - hostPath:
+                path: /dev/shm/mxl/a
+                type: Directory
+              name: mxl-0
+      updateStrategy:
+        type: RollingUpdate
+renders plain HTTP behind a TLS-terminating ingress with token auth:
+  1: |
+    apiVersion: v1
+    data:
+      config.json: |
+        {
+          "api": {
+            "allowedHosts": [
+              "r-foldz",
+              "r-foldz.audio",
+              "r-foldz.audio.svc",
+              "foldz.example.org"
+            ],
+            "allowedOrigins": [
+              "https://foldz.example.org"
+            ]
+          },
+          "auth": {
+            "mode": "token",
+            "token": {
+              "file": "/var/run/secrets/foldz/token/token"
+            }
+          },
+          "domains": [
+            {
+              "name": "a",
+              "path": "/mxl/a"
+            }
+          ],
+          "engine": {
+            "blockSize": 48,
+            "readerMarginSamples": 576,
+            "sampleRate": 48000
+          },
+          "inputs": [
+            {
+              "channels": 8,
+              "flow": "7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55",
+              "layout": [
+                "L",
+                "R",
+                "C",
+                "LFE",
+                "Ls",
+                "Rs",
+                "-",
+                "-"
+              ],
+              "name": "main"
+            }
+          ],
+          "listeners": {
+            "api": {
+              "bind": "0.0.0.0",
+              "port": 8080
+            },
+            "nmos": {
+              "bind": "0.0.0.0",
+              "port": 8081
+            },
+            "ops": {
+              "bind": "0.0.0.0",
+              "port": 9090
+            }
+          },
+          "mxl": {
+            "libraryPath": "/opt/mxl/lib/libmxl.so"
+          },
+          "nmos": {
+            "enabled": false
+          },
+          "outputs": [
+            {
+              "flows": [
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11"
+              ],
+              "gainDb": 0,
+              "label": "Programme stereo",
+              "layout": [
+                "L",
+                "R"
+              ],
+              "lfe": "drop",
+              "name": "stereo",
+              "preset": "bs775-3_2-to-2_0"
+            }
+          ],
+          "rt": {
+            "enabled": true,
+            "priority": 70,
+            "rtCpu": "auto"
+          }
+        }
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  2: |
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ingressClassName: nginx
+      rules:
+        - host: foldz.example.org
+          http:
+            paths:
+              - backend:
+                  service:
+                    name: r-foldz
+                    port:
+                      number: 8080
+                path: /
+                pathType: Prefix
+      tls:
+        - hosts:
+            - foldz.example.org
+          secretName: foldz-example-org
+  3: |
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+  4: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  5: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ports:
+        - name: http
+          port: 8080
+          protocol: TCP
+          targetPort: api
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  6: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-nmos
+    spec:
+      ports:
+        - name: http-nmos
+          port: 8081
+          protocol: TCP
+          targetPort: nmos
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  7: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-ops
+    spec:
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  8: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-headless
+    spec:
+      clusterIP: None
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      publishNotReadyAddresses: true
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+  9: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      podManagementPolicy: Parallel
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      serviceName: r-foldz-headless
+      template:
+        metadata:
+          annotations:
+            checksum/config: ca8fda7b62115b86587a04df0e876373ae3bf80b2fbf2e048ff3e67e0c16fe82
+          labels:
+            app.kubernetes.io/component: audio
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: foldz
+            app.kubernetes.io/version: 1.2.3
+            helm.sh/chart: foldz-1.2.3
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /etc/foldz/config.json
+              env:
+                - name: SAMPLEZ_CPU_REQUEST_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: requests.cpu
+                - name: SAMPLEZ_CPU_LIMIT_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: limits.cpu
+              image: ghcr.io/danielclasen/foldz:1.2.3
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 5
+              name: foldz
+              ports:
+                - containerPort: 8080
+                  name: api
+                  protocol: TCP
+                - containerPort: 8081
+                  name: nmos
+                  protocol: TCP
+                - containerPort: 9090
+                  name: ops
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 2
+                httpGet:
+                  path: /readyz
+                  port: ops
+                periodSeconds: 2
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 512Mi
+                requests:
+                  cpu: "2"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: true
+                capabilities:
+                  add:
+                    - SYS_NICE
+                    - IPC_LOCK
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 2
+              volumeMounts:
+                - mountPath: /etc/foldz
+                  name: config
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /mxl/a
+                  name: mxl-0
+                - mountPath: /var/run/secrets/foldz/token
+                  name: token
+                  readOnly: true
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: r-foldz
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - configMap:
+                name: r-foldz
+              name: config
+            - emptyDir: {}
+              name: tmp
+            - hostPath:
+                path: /dev/shm/mxl/a
+                type: Directory
+              name: mxl-0
+            - name: token
+              secret:
+                items:
+                  - key: token
+                    path: token
+                secretName: foldz-api-token
+      updateStrategy:
+        type: RollingUpdate
+renders the oauth2-proxy sidecar, a CSI domain and the NetworkPolicy:
+  1: |
+    apiVersion: v1
+    data:
+      config.json: |
+        {
+          "api": {
+            "allowedHosts": [
+              "r-foldz",
+              "r-foldz.audio",
+              "r-foldz.audio.svc",
+              "foldz.example.org"
+            ],
+            "allowedOrigins": [
+              "http://foldz.example.org"
+            ]
+          },
+          "auth": {
+            "mode": "proxy",
+            "proxy": {
+              "groupRoles": {
+                "audio-operators": "operator",
+                "audio-viewers": "viewer"
+              },
+              "groupsHeader": "X-Forwarded-Groups",
+              "userHeader": "X-Forwarded-User"
+            }
+          },
+          "domains": [
+            {
+              "name": "a",
+              "path": "/mxl/a"
+            }
+          ],
+          "engine": {
+            "blockSize": 48,
+            "readerMarginSamples": 576,
+            "sampleRate": 48000
+          },
+          "inputs": [
+            {
+              "channels": 8,
+              "flow": "7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55",
+              "layout": [
+                "L",
+                "R",
+                "C",
+                "LFE",
+                "Ls",
+                "Rs",
+                "-",
+                "-"
+              ],
+              "name": "main"
+            }
+          ],
+          "listeners": {
+            "api": {
+              "bind": "127.0.0.1",
+              "port": 8080
+            },
+            "nmos": {
+              "bind": "0.0.0.0",
+              "port": 8081
+            },
+            "ops": {
+              "bind": "0.0.0.0",
+              "port": 9090
+            }
+          },
+          "mxl": {
+            "libraryPath": "/opt/mxl/lib/libmxl.so"
+          },
+          "nmos": {
+            "enabled": false
+          },
+          "outputs": [
+            {
+              "flows": [
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11"
+              ],
+              "gainDb": 0,
+              "label": "Programme stereo",
+              "layout": [
+                "L",
+                "R"
+              ],
+              "lfe": "drop",
+              "name": "stereo",
+              "preset": "bs775-3_2-to-2_0"
+            }
+          ],
+          "rt": {
+            "enabled": false,
+            "priority": 70,
+            "rtCpu": "auto"
+          }
+        }
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  2: |
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      rules:
+        - host: foldz.example.org
+          http:
+            paths:
+              - backend:
+                  service:
+                    name: r-foldz
+                    port:
+                      number: 8080
+                path: /
+                pathType: Prefix
+  3: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ingress:
+        - ports:
+            - port: proxy
+              protocol: TCP
+            - port: ops
+              protocol: TCP
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: nmos-controllers
+            - ipBlock:
+                cidr: 10.20.0.0/16
+          ports:
+            - port: nmos
+              protocol: TCP
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      policyTypes:
+        - Ingress
+  4: |
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+  5: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  6: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ports:
+        - name: http
+          port: 8080
+          protocol: TCP
+          targetPort: proxy
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  7: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-nmos
+    spec:
+      ports:
+        - name: http-nmos
+          port: 8081
+          protocol: TCP
+          targetPort: nmos
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  8: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-ops
+    spec:
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  9: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-headless
+    spec:
+      clusterIP: None
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      publishNotReadyAddresses: true
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+  10: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      podManagementPolicy: Parallel
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      serviceName: r-foldz-headless
+      template:
+        metadata:
+          annotations:
+            checksum/config: 937df62f91b46aee3a13ad1d5122f7ee7605bc0fcdf55f9c46e5ce4c8284a51d
+          labels:
+            app.kubernetes.io/component: audio
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: foldz
+            app.kubernetes.io/version: 1.2.3
+            helm.sh/chart: foldz-1.2.3
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /etc/foldz/config.json
+              env:
+                - name: SAMPLEZ_CPU_REQUEST_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: requests.cpu
+                - name: SAMPLEZ_CPU_LIMIT_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: limits.cpu
+              image: ghcr.io/danielclasen/foldz:1.2.3
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 5
+              name: foldz
+              ports:
+                - containerPort: 8080
+                  name: api
+                  protocol: TCP
+                - containerPort: 8081
+                  name: nmos
+                  protocol: TCP
+                - containerPort: 9090
+                  name: ops
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 2
+                httpGet:
+                  path: /readyz
+                  port: ops
+                periodSeconds: 2
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 512Mi
+                requests:
+                  cpu: "2"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 2
+              volumeMounts:
+                - mountPath: /etc/foldz
+                  name: config
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /mxl/a
+                  name: mxl-0
+            - args:
+                - --http-address=0.0.0.0:4180
+                - --upstream=http://127.0.0.1:8080/
+                - --provider=oidc
+                - --oidc-issuer-url=https://login.example.org/realms/media
+                - --email-domain=*
+              envFrom:
+                - secretRef:
+                    name: foldz-oauth2-proxy
+              image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
+              imagePullPolicy: IfNotPresent
+              name: auth-proxy
+              ports:
+                - containerPort: 4180
+                  name: proxy
+                  protocol: TCP
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: r-foldz
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - configMap:
+                name: r-foldz
+              name: config
+            - emptyDir: {}
+              name: tmp
+            - csi:
+                driver: mxl.example.org
+                volumeAttributes:
+                  domain: a
+              name: mxl-0
+      updateStrategy:
+        type: RollingUpdate

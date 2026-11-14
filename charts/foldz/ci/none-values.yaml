@@ -1,0 +1,4 @@
+# auth none, plain HTTP, ClusterIP only: an in-cluster API with nothing in
+# front of it.
+auth:
+  mode: none

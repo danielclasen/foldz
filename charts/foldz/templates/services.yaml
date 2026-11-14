@@ -1,0 +1,75 @@
+{{- $proxy := eq .Values.auth.mode "proxy" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "foldz.fullname" . }}
+  labels:
+    {{- include "foldz.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "foldz.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: {{ ternary "https" "http" (eq (include "foldz.tlsOn" (dict "ctx" . "listener" "api")) "true") }}
+      port: {{ .Values.service.port }}
+      targetPort: {{ ternary "proxy" "api" $proxy }}
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "foldz.nmosService" . }}
+  labels:
+    {{- include "foldz.labels" . | nindent 4 }}
+  {{- with .Values.nmos.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.nmos.service.type }}
+  selector:
+    {{- include "foldz.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: {{ ternary "https" "http" (eq (include "foldz.tlsOn" (dict "ctx" . "listener" "nmos")) "true") }}-nmos
+      port: {{ .Values.nmos.port }}
+      targetPort: nmos
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "foldz.opsService" . }}
+  labels:
+    {{- include "foldz.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "foldz.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http-ops
+      port: {{ .Values.ops.port }}
+      targetPort: ops
+      protocol: TCP
+---
+# The StatefulSet's governing Service: stable per-pod DNS names, published
+# before the pods are Ready.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "foldz.headlessService" . }}
+  labels:
+    {{- include "foldz.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "foldz.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http-ops
+      port: {{ .Values.ops.port }}
+      targetPort: ops
+      protocol: TCP

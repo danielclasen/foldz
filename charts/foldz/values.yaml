@@ -1,0 +1,171 @@
+image:
+  repository: ghcr.io/danielclasen/foldz
+  # "" uses the chart's appVersion: a release tags the image and the chart
+  # with the same version.
+  tag: ""
+  # sha256:... pins the image; it wins over the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Audio replicas. Replication is not implemented: any value but 1 fails
+# rendering.
+replicas: 1
+
+# The voting witness of a replicated set. Not implemented: true fails
+# rendering.
+witness:
+  enabled: false
+
+mxl:
+  libraryPath: /opt/mxl/lib/libmxl.so
+  # MXL domains, each mounted at /mxl/<name> and rendered into the config's
+  # domains. Each entry takes either hostPath (a directory on the node) or
+  # volume (any pod volume source except hostPath, e.g. csi or
+  # persistentVolumeClaim).
+  domains:
+    - name: a
+      hostPath: /dev/shm/mxl/a
+
+engine:
+  sampleRate: 48000
+  blockSize: 48
+  readerMarginSamples: 576
+
+rt:
+  # Adds SYS_NICE and IPC_LOCK and allows privilege escalation, which the
+  # binary's file capabilities need at exec.
+  enabled: true
+  priority: 70
+  # auto, none, first, last or an index into the container's CPU set. With
+  # auto and rt.enabled, the CPU request must equal the limit in whole CPUs.
+  rtCpu: auto
+
+nmos:
+  # NMOS is not implemented yet: true fails rendering. The listener on
+  # nmos.port is bound either way.
+  enabled: false
+  port: 8081
+  service:
+    type: ClusterIP
+    annotations: {}
+
+# The product section of the config: inputs and outputs. MXL domains, NMOS,
+# engine, RT, listener and auth settings come from the values above and may
+# not be repeated here.
+config: {}
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+ops:
+  port: 9090
+
+auth:
+  # none, token or proxy. none needs a ClusterIP Service and no ingress.
+  mode: none
+  token:
+    # Secret holding the API bearer token; required in token mode.
+    existingSecret: ""
+    key: token
+  proxy:
+    userHeader: X-Forwarded-User
+    groupsHeader: X-Forwarded-Groups
+    # Group name -> viewer or operator; required in proxy mode.
+    groupRoles: {}
+    # The authenticating proxy in front of the API listener, which then
+    # binds 127.0.0.1. args and env are passed through tpl.
+    sidecar:
+      image:
+        repository: quay.io/oauth2-proxy/oauth2-proxy
+        tag: v7.15.5
+        digest: sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
+        pullPolicy: IfNotPresent
+      port: 4180
+      args:
+        - --http-address=0.0.0.0:{{ .Values.auth.proxy.sidecar.port }}
+        - --upstream=http://127.0.0.1:{{ .Values.service.port }}/
+      extraArgs: []
+      env: []
+      envFrom: []
+      resources: {}
+
+api:
+  # Added to the defaults (localhost, 127.0.0.1), the API Service's names
+  # and the ingress hosts.
+  allowedHosts: []
+  # Added to the defaults and the ingress hosts' origins.
+  allowedOrigins: []
+
+tls:
+  # none: plain HTTP, for a listener behind something that terminates TLS.
+  # existingSecret: a kubernetes.io/tls Secret.
+  # certManager: a cert-manager Certificate the chart creates.
+  mode: none
+  # Listeners that serve TLS: api, nmos.
+  listeners:
+    - api
+  existingSecret: ""
+  certManager:
+    issuerRef:
+      name: ""
+      kind: Issuer
+      group: cert-manager.io
+    # Added to the API and NMOS Services' names.
+    dnsNames: []
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  path: /
+  pathType: Prefix
+  tls: []
+
+networkPolicy:
+  enabled: false
+  # NetworkPolicyPeers allowed to reach the NMOS port. Empty allows nobody.
+  # The API and ops ports are open to every source.
+  nmosFrom: []
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Requests equal to limits in whole CPUs give the pod Guaranteed QoS and,
+# under the static CPU manager policy, exclusive CPUs. One CPU runs the RT
+# thread; the others run the service threads. Memory is not measured yet.
+resources:
+  requests:
+    cpu: "2"
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 512Mi
+
+terminationGracePeriodSeconds: 30
+priorityClassName: ""
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,243 @@
+# The properties the binary, the release and the cluster rely on.
+suite: rendering
+values: [../ci/base.yaml]
+release:
+  name: r
+  namespace: audio
+chart:
+  version: 1.2.3
+  appVersion: 1.2.3
+tests:
+  - it: runs the image the release tagged with the chart's version
+    template: statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/danielclasen/foldz:1.2.3
+  - it: pins the image by digest when one is given
+    template: statefulset.yaml
+    set:
+      image.digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/danielclasen/foldz@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+  - it: starts every replica at once and reads the rendered config
+    template: statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.podManagementPolicy
+          value: Parallel
+      - equal:
+          path: spec.serviceName
+          value: r-foldz-headless
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [--config, /etc/foldz/config.json]
+  - it: gives the RT set-up the CPU request and limit in millicores
+    template: statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SAMPLEZ_CPU_REQUEST_MILLICORES
+            valueFrom:
+              resourceFieldRef: { containerName: foldz, resource: requests.cpu, divisor: 1m }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SAMPLEZ_CPU_LIMIT_MILLICORES
+            valueFrom:
+              resourceFieldRef: { containerName: foldz, resource: limits.cpu, divisor: 1m }
+  - it: probes liveness and start-up on /healthz and readiness on /readyz, on the ops port
+    template: statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet
+          value: { path: /healthz, port: ops }
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value: { path: /healthz, port: ops }
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+          value: { path: /readyz, port: ops }
+
+  - it: adds the RT capabilities and lets exec raise them from the file capabilities
+    template: statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities
+          value: { drop: [ALL], add: [SYS_NICE, IPC_LOCK] }
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+  - it: drops every capability and privilege escalation without RT
+    template: statefulset.yaml
+    set:
+      rt.enabled: false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities
+          value: { drop: [ALL] }
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+
+  - it: mounts each MXL domain at /mxl/<name> and names that path in the config
+    set:
+      mxl.domains:
+        - { name: a, hostPath: /dev/shm/mxl/a }
+        - { name: b, volume: { csi: { driver: mxl.example.org } } }
+    asserts:
+      - template: statefulset.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: { name: mxl-1, mountPath: /mxl/b }
+      - template: statefulset.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content: { name: mxl-0, hostPath: { path: /dev/shm/mxl/a, type: Directory } }
+      - template: statefulset.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content: { name: mxl-1, csi: { driver: mxl.example.org } }
+      - template: configmap.yaml
+        matchRegex:
+          path: data["config.json"]
+          pattern: '"name": "b",\s+"path": "/mxl/b"'
+
+  - it: binds every listener on all addresses and names the API Service in allowedHosts
+    template: configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"api": \{\s+"bind": "0.0.0.0",\s+"port": 8080\s+\}'
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"allowedHosts": \[\s+"r-foldz",\s+"r-foldz.audio",\s+"r-foldz.audio.svc"\s+\]'
+  - it: reads the token from a Secret mounted as a directory, so a rotation reaches it
+    set:
+      auth.mode: token
+      auth.token.existingSecret: api-token
+    asserts:
+      - template: configmap.yaml
+        matchRegex:
+          path: data["config.json"]
+          pattern: '"file": "/var/run/secrets/foldz/token/token"'
+      - template: statefulset.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: { name: token, mountPath: /var/run/secrets/foldz/token, readOnly: true }
+
+  - it: puts the API behind the sidecar on 127.0.0.1 in proxy mode
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-operators: operator }
+    asserts:
+      - template: configmap.yaml
+        matchRegex:
+          path: data["config.json"]
+          pattern: '"api": \{\s+"bind": "127.0.0.1",\s+"port": 8080\s+\}'
+      - template: services.yaml
+        documentIndex: 0
+        equal:
+          path: spec.ports[0].targetPort
+          value: proxy
+      - template: statefulset.yaml
+        equal:
+          path: spec.template.spec.containers[1].args
+          value: [--http-address=0.0.0.0:4180, --upstream=http://127.0.0.1:8080/]
+
+  - it: serves TLS on the named listeners only, from the mounted Secret
+    set:
+      tls.mode: existingSecret
+      tls.existingSecret: foldz-tls
+    asserts:
+      - template: configmap.yaml
+        matchRegex:
+          path: data["config.json"]
+          pattern: '"port": 8080,\s+"tls": \{\s+"certFile": "/var/run/secrets/foldz/tls/tls.crt",\s+"keyFile": "/var/run/secrets/foldz/tls/tls.key",\s+"mode": "files"'
+      - template: configmap.yaml
+        matchRegex:
+          path: data["config.json"]
+          pattern: '"nmos": \{\s+"bind": "0.0.0.0",\s+"port": 8081\s+\}'
+      - template: services.yaml
+        documentIndex: 0
+        equal:
+          path: spec.ports[0].name
+          value: https
+      - template: statefulset.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls
+            secret:
+              secretName: foldz-tls
+              items: [{ key: tls.crt, path: tls.crt }, { key: tls.key, path: tls.key }]
+  - it: issues a certificate for the Services' names into the Secret the pod mounts
+    capabilities:
+      apiVersions: [cert-manager.io/v1/Certificate]
+    set:
+      tls.mode: certManager
+      tls.listeners: [api, nmos]
+      tls.certManager.issuerRef.name: ca
+    asserts:
+      - template: certificate.yaml
+        equal:
+          path: spec.secretName
+          value: r-foldz-tls
+      - template: certificate.yaml
+        equal:
+          path: spec.dnsNames
+          value: [r-foldz, r-foldz.audio, r-foldz.audio.svc, r-foldz-nmos, r-foldz-nmos.audio, r-foldz-nmos.audio.svc]
+      - template: statefulset.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls
+            secret:
+              secretName: r-foldz-tls
+              items: [{ key: tls.crt, path: tls.crt }, { key: tls.key, path: tls.key }]
+
+  - it: accepts the ingress hosts and their https origins when the ingress terminates TLS
+    template: configmap.yaml
+    set:
+      auth.mode: token
+      auth.token.existingSecret: t
+      ingress.enabled: true
+      ingress.hosts: [foldz.example.org, plain.example.org]
+      ingress.tls: [{ secretName: s, hosts: [foldz.example.org] }]
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"allowedOrigins": \[\s+"https://foldz.example.org",\s+"http://plain.example.org"\s+\]'
+
+  - it: opens the NMOS port to the listed peers only
+    template: networkpolicy.yaml
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.nmosFrom: [{ ipBlock: { cidr: 10.0.0.0/8 } }]
+    asserts:
+      - equal:
+          path: spec.ingress[1]
+          value:
+            from: [{ ipBlock: { cidr: 10.0.0.0/8 } }]
+            ports: [{ port: nmos, protocol: TCP }]
+  - it: leaves the NMOS port closed with no peers listed
+    template: networkpolicy.yaml
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+      - notContains:
+          path: spec.ingress[0].ports
+          content: { port: nmos, protocol: TCP }
