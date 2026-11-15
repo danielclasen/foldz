@@ -5,11 +5,18 @@
 //! defines: the input through the output's gain matrix, the same after a
 //! silenced block with the input fading in, or +0.0 throughout (a silenced
 //! input, or a block libmxl zero-filled), and every +0.0 block one the
-//! engine counted while the blocks were read. The ops and API listeners
-//! answer, and SIGTERM deletes the output flows.
+//! engine counted while the blocks were read. The gain matrices are
+//! foldz's own folds, so a few gains of the cited tables are checked
+//! against hard-coded values. The ops and API listeners answer, and
+//! SIGTERM deletes the output flows.
 //!
 //! Runs without the test harness. With `SAMPLEZ_REQUIRE_RT=1` the RT
 //! thread must run SCHED_FIFO and the process memory must be locked.
+
+#![allow(
+    clippy::approx_constant,
+    reason = "coefficients are written as printed in their sources, not as 1/sqrt(2)"
+)]
 
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
@@ -41,7 +48,7 @@ fn main() {
     let t = Instant::now();
     downmix();
     println!(
-        "test downmix_outputs_are_bit_exact_against_the_preset_matrices ... ok ({:.1} s)",
+        "test downmix_outputs_are_bit_exact_against_the_fold_matrices ... ok ({:.1} s)",
         t.elapsed().as_secs_f64()
     );
 }
@@ -445,6 +452,45 @@ fn dropouts(foldz: &Foldz) -> Dropouts {
     }
 }
 
+/// Gains of the outputs [`downmix`] configures, from the cited tables
+/// rather than from [`foldz::presets::fold`], which the bit-exact check
+/// takes them from.
+fn cited_gains(folds: &[foldz::presets::Fold]) {
+    let db = |d: f64| 10f64.powf(d / 20.0);
+    // Input channels L R C LFE Lss Rss Lrs Rrs; (output, output channel,
+    // input channel, gain).
+    let cited = [
+        // BS.775-4 Table 2, 2/0: C into L and R at 0.7071; the output's
+        // gainDb -3 scales every gain.
+        (0, 0, 2, 0.7071 * db(-3.0)),
+        (0, 1, 2, 0.7071 * db(-3.0)),
+        (0, 0, 0, db(-3.0)),
+        (0, 0, 1, 0.0),
+        // lfe include at -10 dB, then gainDb.
+        (0, 0, 3, db(-10.0) * db(-3.0)),
+        (0, 1, 3, db(-10.0) * db(-3.0)),
+        // TS 103 190-1 Table 219, 3/4/0.x: Lss into Ls at 0.707, then
+        // BS.775-4 Ls into L at 0.7071.
+        (0, 0, 4, 0.707 * 0.7071 * db(-3.0)),
+        (0, 1, 4, 0.0),
+        // TS 103 190-1 Table 219, 3/4/0.x: Ls = 0.707 Lss + 0.707 Lrs.
+        (1, 4, 4, 0.707),
+        (1, 4, 6, 0.707),
+        (1, 5, 7, 0.707),
+        (1, 2, 2, 1.0),
+        (1, 3, 3, 1.0),
+        // select by label.
+        (2, 0, 2, 1.0),
+    ];
+    for (o, j, i, want) in cited {
+        let got = f64::from(folds[o].matrix.gain(j, i));
+        assert!(
+            (got - want).abs() <= want.abs() * 1e-6,
+            "output {o} channel {j} from input channel {i}: {got}, cited {want}"
+        );
+    }
+}
+
 fn downmix() {
     let domain = Domain::new();
     let (src, stereo, five_one, centre, idle) = (new_id(), new_id(), new_id(), new_id(), new_id());
@@ -480,6 +526,7 @@ fn downmix() {
     std::fs::write(&file, config.to_string()).unwrap();
     let (parsed, folds) = Config::load(&file).unwrap();
     assert_eq!(parsed.outputs.len(), 4);
+    cited_gains(&folds);
 
     let foldz = Foldz::start(&file);
     let outputs = [&stereo, &five_one, &centre, &idle];
