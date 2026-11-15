@@ -83,13 +83,15 @@ jobs:
 
   # The binary for standalone use, from the image's build stage.
   binary:
-    needs: release-please
+    needs: [release-please, image]
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      packages: read
     env:
       VERSION: ${{ needs.release-please.outputs.version }}
+      IMAGE: ghcr.io/${{ github.repository }}
       TAG: ${{ needs.release-please.outputs.tag_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,6 +108,19 @@ jobs:
           target: dist
           outputs: type=local,dest=dist
           cache-from: type=gha,scope=image
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # The asset is a second build of the image's stage; it must be the
+      # binary the published image carries.
+      - name: Check the binary is the published image's binary
+        run: |
+          id=$(docker create "$IMAGE:$VERSION")
+          docker cp "$id:/usr/local/bin/foldz" published-foldz
+          docker rm "$id"
+          test "$(sha256sum < dist/foldz)" = "$(sha256sum < published-foldz)"
       - name: Attach the binary, its licences and their SHA-256 sums
         env:
           GH_TOKEN: ${{ github.token }}
@@ -116,7 +131,7 @@ jobs:
           mv THIRD-PARTY.txt "foldz-$VERSION-THIRD-PARTY.txt"
           sha256sum "foldz-$VERSION-x86_64-linux" "foldz-$VERSION-THIRD-PARTY.txt" \
             > "foldz-$VERSION-SHA256SUMS"
-          gh release upload "$TAG" "foldz-$VERSION-"* --repo "$GITHUB_REPOSITORY"
+          gh release upload --clobber "$TAG" "foldz-$VERSION-"* --repo "$GITHUB_REPOSITORY"
       # Workflow logs are no evidence the published artefact is right.
       - name: Download the attached files and check their sums
         env:
