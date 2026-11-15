@@ -178,3 +178,9 @@ Each output's `flows` must hold one flow id per replica.
 `tests/` (golden renders of every scenario in `ci/` and the validation
 rules) and validates each scenario's render with kubeconform against a
 pinned Kubernetes API version.
+
+`scripts/chart-smoke.sh <repository>:<tag>` installs the chart with a local
+image into a throwaway kind cluster, with RT off, token auth, a `hostPath`
+domain and the config of `ci/base.yaml`. It checks `/healthz`, `/readyz`
+and that `/api/v1/status` answers 401 without the bearer and 200 with it,
+and that the output flow leaves the node's domain on uninstall.

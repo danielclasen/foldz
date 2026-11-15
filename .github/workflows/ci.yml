@@ -131,3 +131,42 @@ jobs:
           echo "$bin" >> "$GITHUB_PATH"
       - name: Lint, unit-test and validate the chart
         run: scripts/chart-test.sh
+
+  chart-smoke:
+    runs-on: ubuntu-24.04
+    env:
+      HELM_VERSION: v4.2.2
+      HELM_SHA256: 9adafecab4d406853bba163a70e9f104f47dbbf65ce24b7653bae7e36150bcb6
+      KIND_VERSION: v0.32.0
+      KIND_SHA256: 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
+      KUBECTL_VERSION: v1.36.1
+      KUBECTL_SHA256: 629d3f410e09bf49b64ae7079f7f0bda1191efed311f7d37fdbab0ad5b0ec2b7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: foldz:ci
+          cache-from: type=gha,scope=image
+      - name: Install helm, kind and kubectl
+        run: |
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo helm.tar.gz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          echo "$HELM_SHA256  helm.tar.gz" | sha256sum -c -
+          tar -xzf helm.tar.gz -C "$bin" --strip-components=1 linux-amd64/helm
+          curl -fsSLo "$bin/kind" \
+            "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  $bin/kind" | sha256sum -c -
+          curl -fsSLo "$bin/kubectl" "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
+          echo "$KUBECTL_SHA256  $bin/kubectl" | sha256sum -c -
+          chmod +x "$bin/kind" "$bin/kubectl"
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: Install the chart into kind and check the pod and its API
+        run: scripts/chart-smoke.sh foldz:ci
