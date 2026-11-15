@@ -277,6 +277,22 @@ impl Counters {
     }
 }
 
+impl InputCounters {
+    pub fn of(e: &samplez::InputStatus) -> InputCounters {
+        let c = &e.counters;
+        InputCounters {
+            copied: c.copied,
+            below_last_read: c.below_last_read,
+            late: c.late,
+            too_late: c.too_late,
+            too_early: c.too_early,
+            invalid: c.invalid,
+            other: c.other,
+            probes: c.probes,
+        }
+    }
+}
+
 fn rt_step(name: &str, step: &Step) -> RtStep {
     let (state, detail) = match step {
         Step::Active(d) => (StepState::Active, d),
@@ -321,16 +337,7 @@ impl Status {
                     error: e.error.clone(),
                     margin_short: e.margin_short,
                     margin_warning: e.margin_warning,
-                    counters: InputCounters {
-                        copied: e.counters.copied,
-                        below_last_read: e.counters.below_last_read,
-                        late: e.counters.late,
-                        too_late: e.counters.too_late,
-                        too_early: e.counters.too_early,
-                        invalid: e.counters.invalid,
-                        other: e.counters.other,
-                        probes: e.counters.probes,
-                    },
+                    counters: InputCounters::of(e),
                 },
                 None => InputStatus {
                     name: i.name.clone(),

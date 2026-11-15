@@ -249,7 +249,7 @@ domains, as the samplez engine requires of its outputs.
 | api | `POST /api/v1/login` | `token` mode: the token for a session cookie |
 | ops | `GET /healthz` | 200 while the audio thread processed a block within the last second |
 | ops | `GET /readyz` | 200 while the engine runs and the listeners serve |
-| ops | `GET /metrics` | Prometheus text: `samplez_rt_heartbeat_blocks_total`, `samplez_deadline_miss_total`, `samplez_overrun_skipped_samples_total`, `samplez_input_*_total`, `samplez_output_*_total`, `samplez_clock_steps_total` and others |
+| ops | `GET /metrics` | Prometheus text: the engine counters of `/api/v1/status` (`samplez_rt_heartbeat_blocks_total`, `samplez_deadline_miss_total`, `samplez_overrun_skipped_samples_total` and others), the maxima `samplez_wake_jitter_max_nanoseconds` and `samplez_process_time_max_nanoseconds` (counters, since start), and per connected input `samplez_input_reads_total{input, outcome}` and `samplez_input_validity_probes_total{input}` |
 
 `openapi.json` is the OpenAPI 3.1 document of `/api/v1` in `token` mode;
 a test fails when it differs from the code.

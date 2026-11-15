@@ -628,13 +628,31 @@ fn downmix() {
     let (code, metrics) = get(foldz.ops, "/metrics");
     assert_eq!(code, 200);
     let metrics = metrics.as_str().unwrap();
-    let heartbeat: u64 = metrics
-        .lines()
-        .find_map(|l| l.strip_prefix("samplez_rt_heartbeat_blocks_total "))
-        .expect("heartbeat metric")
-        .parse()
-        .unwrap();
+    let metric = |series: &str| -> u64 {
+        metrics
+            .lines()
+            .find_map(|l| l.strip_prefix(series)?.strip_prefix(' '))
+            .unwrap_or_else(|| panic!("no {series} in\n{metrics}"))
+            .parse()
+            .unwrap()
+    };
+    let heartbeat = metric("samplez_rt_heartbeat_blocks_total");
     assert!(heartbeat > 1_000, "{heartbeat}");
+    for series in [
+        "samplez_wake_jitter_max_nanoseconds",
+        "samplez_process_time_max_nanoseconds",
+    ] {
+        assert!(metric(series) > 0, "{series}");
+    }
+    // Per input, for the connected one only.
+    let copied = metric(r#"samplez_input_reads_total{input="main",outcome="copied"}"#);
+    assert!(
+        copied > 1_000 && copied <= heartbeat,
+        "{copied} {heartbeat}"
+    );
+    metric(r#"samplez_input_reads_total{input="main",outcome="late"}"#);
+    metric(r#"samplez_input_validity_probes_total{input="main"}"#);
+    assert!(!metrics.contains(r#"input="spare""#), "{metrics}");
 
     assert!(foldz.terminate(), "foldz exits 0 on SIGTERM");
     for id in outputs {

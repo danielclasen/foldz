@@ -1,13 +1,13 @@
 //! Passes the engine's heartbeat and counters to the ops listener: the RT
-//! thread's heartbeat drives `/healthz`, and the counters are rendered on
-//! `/metrics`.
+//! thread's heartbeat drives `/healthz`, and the engine and per-input
+//! counters are rendered on `/metrics`.
 
 use std::time::Duration;
 
 use samplez::Engine;
 use samplez_service::{Counter, Metrics, Ops};
 
-use crate::api::{Counters, EngineSlot};
+use crate::api::{Counters, EngineSlot, InputCounters};
 
 /// How often [`Exporter::run`] samples the engine.
 pub const PERIOD: Duration = Duration::from_millis(100);
@@ -16,8 +16,9 @@ pub const PERIOD: Duration = Duration::from_millis(100);
 type Value = fn(&Counters) -> u64;
 
 /// The engine counters exported, by metric name: the value since start
-/// and the help text.
-const ENGINE: [(&str, Value, &str); 13] = [
+/// and the help text. The two maxima never decrease, so they are counters
+/// too: samplez-service has no gauge.
+const ENGINE: [(&str, Value, &str); 15] = [
     (
         "samplez_rt_heartbeat_blocks_total",
         |c| c.heartbeat_blocks,
@@ -83,6 +84,31 @@ const ENGINE: [(&str, Value, &str); 13] = [
         |c| c.rt_minor_faults,
         "Minor page faults of the RT thread.",
     ),
+    (
+        "samplez_wake_jitter_max_nanoseconds",
+        |c| c.wake_jitter_max_ns,
+        "Largest wake lateness of the RT thread after its sleep until a block deadline, since start.",
+    ),
+    (
+        "samplez_process_time_max_nanoseconds",
+        |c| c.process_time_max_ns,
+        "Largest processing time of a block, since start.",
+    ),
+];
+
+/// Reads one per-input counter's value.
+type InputValue = fn(&InputCounters) -> u64;
+
+/// The read outcomes of an input exported as `samplez_input_reads_total`,
+/// by `outcome` label.
+const OUTCOMES: [(&str, InputValue); 7] = [
+    ("copied", |c| c.copied),
+    ("below_last_read", |c| c.below_last_read),
+    ("late", |c| c.late),
+    ("too_late", |c| c.too_late),
+    ("too_early", |c| c.too_early),
+    ("invalid", |c| c.invalid),
+    ("other", |c| c.other),
 ];
 
 /// One exported counter and the engine value it last added up to.
@@ -92,10 +118,45 @@ struct Exported {
     last: u64,
 }
 
+/// One input's exported counters and the values they last added up to.
+struct Input {
+    name: String,
+    series: Vec<(Counter, InputValue, u64)>,
+}
+
+impl Input {
+    fn new(metrics: &Metrics, name: &str) -> Input {
+        let reads = OUTCOMES.iter().map(|(outcome, value)| {
+            let labels = [("input", name), ("outcome", *outcome)];
+            let help = "Block reads of an input, by outcome.";
+            (
+                metrics.counter("samplez_input_reads_total", help, &labels),
+                *value,
+            )
+        });
+        let probes = (
+            metrics.counter(
+                "samplez_input_validity_probes_total",
+                "Validity probes of an input after a failed read.",
+                &[("input", name)],
+            ),
+            (|c| c.probes) as InputValue,
+        );
+        Input {
+            name: name.to_owned(),
+            series: reads
+                .chain([probes])
+                .map(|(counter, value)| (counter, value, 0))
+                .collect(),
+        }
+    }
+}
+
 pub struct Exporter {
     ops: Ops,
     engine: EngineSlot,
     exported: Vec<Exported>,
+    inputs: Vec<Input>,
     heartbeat: u64,
 }
 
@@ -114,12 +175,15 @@ impl Exporter {
             ops,
             engine,
             exported,
+            inputs: Vec::new(),
             heartbeat: 0,
         }
     }
 
     /// Beats the ops heartbeat when the RT thread's has advanced since the
-    /// last call, and adds what each engine counter gained to its metric.
+    /// last call, and adds what each engine and input counter gained to
+    /// its metric. An input's series appear once the engine reports it;
+    /// an unconnected input has none.
     pub fn sample(&mut self) {
         let engine = self.engine.lock().expect("engine lock poisoned");
         let Some(engine): Option<&Engine> = engine.as_ref() else {
@@ -134,6 +198,22 @@ impl Exporter {
             let now = (e.value)(&c);
             e.counter.add(now.saturating_sub(e.last));
             e.last = now;
+        }
+        for status in engine.status().inputs {
+            let i = match self.inputs.iter().position(|i| i.name == status.name) {
+                Some(i) => i,
+                None => {
+                    self.inputs
+                        .push(Input::new(self.ops.metrics(), &status.name));
+                    self.inputs.len() - 1
+                }
+            };
+            let counters = InputCounters::of(&status);
+            for (counter, value, last) in &mut self.inputs[i].series {
+                let now = value(&counters);
+                counter.add(now.saturating_sub(*last));
+                *last = now;
+            }
         }
     }
 
