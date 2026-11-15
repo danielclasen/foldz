@@ -1,8 +1,9 @@
 #!/bin/bash
-# Starts the foldz image as a non-root user with a read-only root file
-# system, three times: with the default capabilities, with every
+# Starts the foldz image with a read-only root file system, as the
+# calling user three times: with the default capabilities, with every
 # capability dropped, and with SYS_NICE and IPC_LOCK added, where the RT
-# thread has to run SCHED_FIFO with its memory locked. Each time the ops
+# thread has to run SCHED_FIFO with its memory locked; and once as the
+# image's own user, 65532, on a domain it can write. Each time the ops
 # listener has to answer /healthz and /readyz, the API listener has to
 # serve TLS with the certificate whose fingerprint foldz logged and
 # require the bearer token, and the output flow has to appear in the
@@ -15,6 +16,8 @@ image=$1
 name=foldz-smoke-$$
 work=$(mktemp -d /dev/shm/foldz-smoke.XXXXXX)
 trap 'docker rm -f "$name" >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
+
+test "$(docker inspect -f '{{.Config.User}}' "$image")" = 65532:65532
 
 in_flow=7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55
 out_flow=0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11
@@ -43,7 +46,6 @@ run() {
   shift
   echo "== foldz with $*"
   docker run -d --name "$name" --read-only --tmpfs /tmp \
-    --user "$(id -u):$(id -g)" \
     -v "$work/domain:/mxl/a" -v "$work/secret:/run/secrets/foldz:ro" \
     -v "$work/config.json:/etc/foldz/config.json:ro" \
     -p 127.0.0.1::8080 -p 127.0.0.1::9090 "$@" "$image" >/dev/null
@@ -84,7 +86,10 @@ run() {
   docker rm "$name" >/dev/null
 }
 
+me=(--user "$(id -u):$(id -g)")
+run degraded "${me[@]}"
+run degraded "${me[@]}" --cap-drop ALL
+run active "${me[@]}" --cap-add SYS_NICE --cap-add IPC_LOCK
+chmod 0777 "$work/domain"
 run degraded
-run degraded --cap-drop ALL
-run active --cap-add SYS_NICE --cap-add IPC_LOCK
 echo "smoke ok"
