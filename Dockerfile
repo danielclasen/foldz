@@ -36,6 +36,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && /opt/cargo-about/bin/cargo-about generate --locked --fail \
       -o /out/usr/share/licenses/foldz/THIRD-PARTY.txt about.hbs
 
+# The binary and the licences of the crates in it, attached to a release.
+FROM scratch AS dist
+COPY --from=build /out/usr/local/bin/foldz /out/usr/share/licenses/foldz/THIRD-PARTY.txt /
+
 FROM debian:trixie-20261027@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]

@@ -37,14 +37,28 @@ so LFE arrives at the sum of the two; LFE is dropped otherwise.
 
 ## Running it standalone
 
-foldz runs on Linux x86_64 and loads libmxl v1.1.0 (`dmf-mxl/mxl`, Release
-build) from `mxl.libraryPath` at start. The image carries that build at
-`/opt/mxl/lib`:
+foldz runs on Linux x86_64. Each release carries the binary as
+`foldz-<version>-x86_64-linux`, the licences of the Rust crates in it as
+`foldz-<version>-THIRD-PARTY.txt` and the SHA-256 sums of both as
+`foldz-<version>-SHA256SUMS`, built in the same stage as the image's
+binary:
+
+```sh
+gh release download v<version> --repo danielclasen/foldz --pattern 'foldz-*'
+sha256sum -c foldz-<version>-SHA256SUMS
+install -m 0755 foldz-<version>-x86_64-linux ./foldz
+```
+
+It loads libmxl v1.1.0 (`dmf-mxl/mxl`, Release build) from
+`mxl.libraryPath` at start, a C++ library that needs `libstdc++.so.6`.
+The image carries that build at `/opt/mxl/lib`, and the binary at
+`/usr/local/bin/foldz`:
 
 ```sh
 id=$(docker create ghcr.io/danielclasen/foldz:<version>)
 docker cp -L "$id:/opt/mxl/lib/libmxl.so" ./libmxl.so
 docker cp "$id:/opt/mxl/share/licenses" ./mxl-licenses
+docker cp "$id:/usr/local/bin/foldz" ./foldz
 docker rm "$id"
 ```
 

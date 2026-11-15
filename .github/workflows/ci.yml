@@ -86,3 +86,14 @@ jobs:
           cache-to: type=gha,scope=image,mode=max
       - name: Start the image and check its listeners
         run: docker/smoke.sh foldz:ci
+      - name: Build the release binary
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: dist
+          outputs: type=local,dest=dist
+          cache-from: type=gha,scope=image
+      - name: Check the release binary runs here
+        run: |
+          test -s dist/THIRD-PARTY.txt
+          dist/foldz --version | grep -q '^foldz '
