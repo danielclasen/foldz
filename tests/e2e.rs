@@ -4,8 +4,9 @@
 //! input. Every output block read must be exactly one of what the engine
 //! defines: the input through the output's gain matrix, the same after a
 //! silenced block with the input fading in, or +0.0 throughout (a silenced
-//! input, or a block libmxl zero-filled). The ops and API listeners answer,
-//! and SIGTERM deletes the output flows.
+//! input, or a block libmxl zero-filled), and every +0.0 block one the
+//! engine counted while the blocks were read. The ops and API listeners
+//! answer, and SIGTERM deletes the output flows.
 //!
 //! Runs without the test harness. With `SAMPLEZ_REQUIRE_RT=1` the RT
 //! thread must run SCHED_FIFO and the process memory must be locked.
@@ -426,6 +427,24 @@ fn check(
     }
 }
 
+/// The engine counters of +0.0 output blocks: samples skipped behind an
+/// overrun, which libmxl zero-fills, and silenced input blocks.
+#[derive(Debug, Clone, Copy)]
+struct Dropouts {
+    skipped_samples: u64,
+    silenced_blocks: u64,
+}
+
+fn dropouts(foldz: &Foldz) -> Dropouts {
+    let (code, status) = get(foldz.api, "/api/v1/status");
+    assert_eq!(code, 200, "{status}");
+    let c = &status["counters"];
+    Dropouts {
+        skipped_samples: c["overrunSkippedSamples"].as_u64().unwrap(),
+        silenced_blocks: c["inputSilencedBlocks"].as_u64().unwrap(),
+    }
+}
+
 fn downmix() {
     let domain = Domain::new();
     let (src, stereo, five_one, centre, idle) = (new_id(), new_id(), new_id(), new_id(), new_id());
@@ -499,32 +518,55 @@ fn downmix() {
         .collect();
     let mut counts = Counts::default();
     let mut fade_start = None;
-    let mut k = now_k() - 25;
+    // The engine processes a block only once libmxl's clock has passed its
+    // end, so the window starts at a block it had not processed when the
+    // counters were read.
+    let before = dropouts(&foldz);
+    let mut k = now_k();
+    // Blocks committed for at least 100 ms, so every output has them.
+    let committed = || now_k() - (MARGIN + 4800) / B;
     // Blocks leave the readable history 1 s after they were written, so
     // each round reads what was written while the last one was checked.
     while counts.total() < 3_000 {
         std::thread::sleep(Duration::from_millis(300));
-        // Blocks committed for at least 100 ms, so every output has them.
-        let end = now_k() - (MARGIN + 4800) / B;
+        let end = committed();
         check(&mut readers, k..end, &mut fade_start, &mut counts);
         k = end;
     }
-    eprintln!("  blocks checked: {counts:?}");
+    // A run of +0.0 blocks at the end is read on until a block ends it,
+    // which tells a silenced input from a skip.
+    let t = Instant::now();
+    while counts.zero_run > 0 {
+        assert!(
+            t.elapsed() < 5 * SECOND,
+            "+0.0 blocks up to {k}: {counts:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+        let end = committed();
+        check(&mut readers, k..end, &mut fade_start, &mut counts);
+        k = end;
+    }
+    // Every block read was committed, so processed, before this second
+    // read: every +0.0 block in the window is one the engine counted
+    // between the two. Blocks the engine processed outside the window
+    // can only add to the counts.
+    let after = dropouts(&foldz);
+    eprintln!("  blocks checked: {counts:?}, counted {before:?} -> {after:?}");
+    assert!(
+        after.skipped_samples - before.skipped_samples >= counts.skipped * B,
+        "{counts:?}: {before:?} -> {after:?}"
+    );
+    assert!(
+        after.silenced_blocks - before.silenced_blocks >= counts.silenced,
+        "{counts:?}: {before:?} -> {after:?}"
+    );
+    // The counters account for every +0.0 block; most blocks still carry
+    // the matrix, so the bit-exact check covered it.
     assert!(counts.clean * 10 > counts.total() * 9, "{counts:?}");
 
     let (code, status) = get(foldz.api, "/api/v1/status");
     assert_eq!(code, 200);
     assert_eq!(status["inputs"][1]["state"], "unconnected", "{status}");
-    // Every zero-filled or silenced block seen is one the engine counted.
-    let c = &status["counters"];
-    assert!(
-        c["overrunSkippedSamples"].as_u64().unwrap() >= counts.skipped * B,
-        "{counts:?} {c}"
-    );
-    assert!(
-        c["inputSilencedBlocks"].as_u64().unwrap() >= counts.silenced,
-        "{counts:?} {c}"
-    );
     for o in status["outputs"].as_array().unwrap() {
         assert_eq!(o["realised"], true, "{o}");
     }
