@@ -757,5 +757,9 @@ fn config_errors_exit_2_before_anything_starts() {
     let (code, stderr) = run_foldz("foldz-exit-token.json", &v);
     assert_eq!(code, Some(2), "{stderr}");
     assert!(stderr.contains("foldz: config: "), "{stderr}");
+    assert!(
+        stderr.contains("reading /nonexistent/foldz-token"),
+        "{stderr}"
+    );
     assert!(!stderr.contains("listener on"), "{stderr}");
 }
