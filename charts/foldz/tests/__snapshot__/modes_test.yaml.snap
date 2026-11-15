@@ -1691,7 +1691,7 @@ renders the oauth2-proxy sidecar, a CSI domain and the NetworkPolicy:
                 matchLabels:
                   kubernetes.io/metadata.name: nmos-controllers
             - ipBlock:
-                cidr: 10.20.0.0/16
+                cidr: 192.0.2.0/24
           ports:
             - port: nmos
               protocol: TCP
