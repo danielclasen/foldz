@@ -557,9 +557,9 @@ impl Config {
         &self,
         at: &str,
         input: &'a Input,
-        domains: &[&str],
+        domains: &[&'a str],
         names: &mut HashSet<&'a str>,
-        input_flows: &mut HashSet<&'a str>,
+        input_flows: &mut HashSet<(&'a str, &'a str)>,
     ) -> Result<(), ConfigError> {
         if input.name.is_empty() {
             return err(at, "name is empty");
@@ -577,7 +577,7 @@ impl Config {
                 ),
             );
         }
-        pick(
+        let domain = pick(
             &format!("{at}.domain"),
             "domain",
             input.domain.as_deref(),
@@ -585,10 +585,11 @@ impl Config {
         )?;
         if let Some(flow) = &input.flow {
             check_uuid(&format!("{at}.flow"), flow)?;
-            if !input_flows.insert(flow.as_str()) {
+            // A flow id in another domain is another flow.
+            if !input_flows.insert((domain, flow.as_str())) {
                 return err(
                     format!("{at}.flow"),
-                    format!("flow {flow} is read by another input"),
+                    format!("flow {flow} is read by another input in domain {domain:?}"),
                 );
             }
         }
@@ -606,7 +607,7 @@ impl Config {
         domains: &[&str],
         input_names: &[&str],
         names: &mut HashSet<&'a str>,
-        input_flows: &HashSet<&str>,
+        input_flows: &HashSet<(&str, &str)>,
         output_flows: &mut HashSet<&'a str>,
     ) -> Result<Fold, ConfigError> {
         if output.name.is_empty() {
@@ -629,7 +630,7 @@ impl Config {
             output.input.as_deref(),
             input_names,
         )?;
-        pick(
+        let domain = pick(
             &format!("{at}.domain"),
             "domain",
             output.domain.as_deref(),
@@ -669,10 +670,15 @@ impl Config {
             (None, _) => return err(merged_at, "required with more than one member flow"),
             (Some(id), _) => Some((merged_at, id)),
         };
+        // Written ids are unique across domains, as samplez requires of
+        // its outputs; an id read in another domain is another flow.
         for (at, flow) in ids.chain(merged) {
             check_uuid(&at, flow)?;
-            if input_flows.contains(flow.as_str()) {
-                return err(at, format!("flow {flow} is also an input flow"));
+            if input_flows.contains(&(domain, flow.as_str())) {
+                return err(
+                    at,
+                    format!("flow {flow} is also an input flow in domain {domain:?}"),
+                );
             }
             if !output_flows.insert(flow.as_str()) {
                 return err(at, format!("flow {flow} is used twice"));

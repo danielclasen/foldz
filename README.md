@@ -235,7 +235,10 @@ An output:
 | `gainDb` | default `0` |
 
 An output reading an input without a flow is written silent. Flow ids are
-lowercase UUIDs, and no flow is both read and written.
+lowercase UUIDs. An id names a flow within its domain: no flow is read by
+two inputs or both read and written in one domain, while the same id read
+in another domain is another flow. Every written id is unique across all
+domains, as the samplez engine requires of its outputs.
 
 ## API
 

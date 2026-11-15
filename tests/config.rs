@@ -332,6 +332,46 @@ fn two_inputs_may_not_read_one_flow() {
 }
 
 #[test]
+fn flow_ids_are_scoped_to_their_domain() {
+    let mut v = base();
+    v["domains"] = json!([{ "name": "a", "path": "/mxl/a" }, { "name": "b", "path": "/mxl/b" }]);
+    v["inputs"][0]["domain"] = json!("a");
+    v["outputs"][0]["domain"] = json!("b");
+    // Read in a, written in b: another flow.
+    v["outputs"][0]["flows"] = json!([IN_A]);
+    let config = parse(v.clone()).unwrap();
+    config.engine(&config.validate().unwrap()).unwrap();
+    // Read in a and in b: two flows.
+    let mut w = v.clone();
+    let mut second = w["inputs"][0].clone();
+    second["name"] = json!("copy");
+    second["domain"] = json!("b");
+    w["inputs"].as_array_mut().unwrap().push(second);
+    w["outputs"][0]["input"] = json!("main");
+    w["outputs"][0]["flows"] = json!([OUT_A]);
+    let config = parse(w.clone()).unwrap();
+    config.engine(&config.validate().unwrap()).unwrap();
+    // Read and written in b.
+    w["outputs"][0]["flows"] = json!([IN_A]);
+    assert_invalid(
+        w,
+        "outputs[0].flows[0]",
+        "also an input flow in domain \"b\"",
+    );
+
+    // Written in b and in a: refused, samplez needs every output flow id
+    // unique.
+    v["outputs"][0]["flows"] = json!([OUT_A]);
+    let mut second = v["outputs"][0].clone();
+    second["name"] = json!("mono");
+    second["domain"] = json!("a");
+    second["layout"] = json!(["C"]);
+    second["preset"] = json!("bs775-3_2-to-1_0");
+    v["outputs"].as_array_mut().unwrap().push(second);
+    assert_invalid(v, "outputs[1].flows[0]", "used twice");
+}
+
+#[test]
 fn errors_name_the_item_they_concern() {
     let mut v = base();
     v["outputs"][0]["flows"] = json!(["x"]);
