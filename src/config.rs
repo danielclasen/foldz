@@ -335,10 +335,20 @@ pub fn is_http_url(s: &str) -> bool {
         Some(p) => p.bytes().all(|b| b.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|p| p > 0),
         None => port.is_empty(),
     };
-    // A host of digits and dots only is an IPv4 address or nothing, so
-    // `999.1.1.1` or `10.1` is not taken for a DNS name.
+    // A WHATWG URL parser takes a host whose last label is a decimal or
+    // `0x` number for IPv4, so such a host is a dotted-decimal IPv4
+    // address or nothing: `999.1.1.1`, `10.1`, `registry.10` and
+    // `0x7f.0.0.1` are not taken for DNS names.
     let host_ok = host.is_none_or(|h| {
-        if h.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        let last = h.strip_suffix('.').unwrap_or(h).rsplit('.').next();
+        let numeric = last.is_some_and(|l| {
+            let hex = l.strip_prefix("0x").or_else(|| l.strip_prefix("0X"));
+            match hex {
+                Some(digits) => digits.bytes().all(|b| b.is_ascii_hexdigit()),
+                None => !l.is_empty() && l.bytes().all(|b| b.is_ascii_digit()),
+            }
+        });
+        if numeric {
             h.parse::<std::net::Ipv4Addr>().is_ok()
         } else {
             is_dns_name(h)

@@ -352,6 +352,8 @@ fn registry_url_and_dns_sd_domain_are_checked() {
         "https://registry.example.com/x-nmos/registration/v1.3",
         "http://10.0.0.1:80",
         "http://[fd00::1]:8010/",
+        "http://registry.10a:8010",
+        "http://0xregistry.example",
     ] {
         let mut v = base();
         v["nmos"] = json!({ "registry": { "url": ok, "dnsSdDomain": "example.com." } });
@@ -372,6 +374,12 @@ fn registry_url_and_dns_sd_domain_are_checked() {
         "http://10.1:8010",
         "http://1.2.3.4.:8010",
         "http://1234",
+        // A WHATWG parser reads these as IPv4 or refuses them.
+        "http://registry.10:8010",
+        "http://registry.10.:8010",
+        "http://0x7f.0.0.1:8010",
+        "http://registry.0x1F",
+        "http://registry.0x",
     ] {
         let mut v = base();
         v["nmos"] = json!({ "registry": { "url": bad } });
