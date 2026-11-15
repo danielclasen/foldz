@@ -221,3 +221,35 @@ tests:
       rt.rtCpu: none
     asserts:
       - notFailedTemplate: {}
+  - it: refuses a memory request below the limit with RT auto pinning
+    set:
+      resources.requests.memory: 256Mi
+    asserts:
+      - failedTemplate:
+          errorPattern: "rt.rtCpu auto needs resources.requests.memory equal to resources.limits.memory \\(request 256Mi, limit 512Mi\\)"
+  - it: refuses a sidecar without equal requests and limits with RT auto pinning
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.proxy.sidecar.resources: rt.rtCpu auto with auth.mode proxy needs the sidecar's cpu request to equal its limit"
+  - it: refuses a sidecar memory request below its limit with RT auto pinning
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+      auth.proxy.sidecar.resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { cpu: 100m, memory: 128Mi }
+    asserts:
+      - failedTemplate:
+          errorPattern: "the sidecar's memory request to equal its limit"
+  - it: accepts a sidecar with equal requests and limits with RT auto pinning
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+      auth.proxy.sidecar.resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { cpu: 100m, memory: 64Mi }
+    asserts:
+      - notFailedTemplate: {}

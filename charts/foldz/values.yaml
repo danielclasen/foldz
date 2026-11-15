@@ -41,7 +41,9 @@ rt:
   enabled: true
   priority: 70
   # auto, none, first, last or an index into the container's CPU set. With
-  # auto and rt.enabled, the CPU request must equal the limit in whole CPUs.
+  # auto and rt.enabled, the pod must be Guaranteed: the CPU request equals
+  # the limit in whole CPUs, the memory request equals the limit, and in
+  # proxy mode so do the sidecar's requests and limits.
   rtCpu: auto
 
 nmos:
@@ -153,7 +155,7 @@ podSecurityContext:
 
 # Requests equal to limits in whole CPUs give the pod Guaranteed QoS and,
 # under the static CPU manager policy, exclusive CPUs. One CPU runs the RT
-# thread; the others run the service threads. Memory is not measured yet.
+# thread; the others run the service threads.
 resources:
   requests:
     cpu: "2"

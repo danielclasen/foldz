@@ -140,6 +140,7 @@ tests:
     set:
       auth.mode: proxy
       auth.proxy.groupRoles: { audio-operators: operator }
+      rt.enabled: false
     asserts:
       - template: configmap.yaml
         matchRegex:

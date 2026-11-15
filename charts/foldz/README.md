@@ -87,10 +87,16 @@ privilege escalation, since the binary carries these capabilities in its
 permitted file capabilities and `no_new_privs` would stop exec from granting
 them. Without it every capability is dropped.
 
-With `rt.rtCpu: auto` the RT thread is pinned only when the CPU request
-equals the limit in whole CPUs, which the chart enforces; the binary reads
-both from the downward API. Exclusive CPUs further need the kubelet's
-`static` CPU manager policy, which grants them to Guaranteed pods only. On
+With `rt.rtCpu: auto` the RT thread is pinned only when the pod has
+Guaranteed QoS and the CPU request equals the limit in whole CPUs. The chart
+enforces this at render time: `resources` needs CPU and memory requests equal
+to their limits, and with `auth.mode: proxy` the sidecar's
+`auth.proxy.sidecar.resources` needs the same for CPU and memory, since one
+Burstable container makes the pod Burstable. Memory values are compared as
+written, so use the same notation for request and limit. The binary reads the
+CPU request and limit from the downward API. Exclusive CPUs further need the
+kubelet's `static` CPU manager policy, which grants them to Guaranteed pods
+only. On
 kernels built with `CONFIG_RT_GROUP_SCHED`, `SCHED_FIFO` is refused to a
 cgroup without an RT runtime budget. The node's own requirements, swap off
 and `vm.compact_unevictable_allowed=0`, are in the binary's

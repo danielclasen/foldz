@@ -103,5 +103,20 @@ setting that has no effect.
 {{- if or (ne $r $l) (ne (mod $r 1000) 0) (eq $r 0) }}
 {{- fail (printf "resources: rt.rtCpu auto needs the CPU request to equal the limit in whole CPUs (request %v, limit %v); the RT thread is pinned to an exclusive CPU only then" $req $lim) }}
 {{- end }}
+{{- $rmem := dig "requests" "memory" "" $v.resources }}
+{{- $lmem := dig "limits" "memory" "" $v.resources }}
+{{- if or (not $rmem) (ne (toString $rmem) (toString $lmem)) }}
+{{- fail (printf "resources: rt.rtCpu auto needs resources.requests.memory equal to resources.limits.memory (request %v, limit %v); Guaranteed QoS, which exclusive CPUs need, requires both" (default "unset" $rmem) (default "unset" $lmem)) }}
+{{- end }}
+{{- if eq $v.auth.mode "proxy" }}
+{{- $sc := $v.auth.proxy.sidecar.resources }}
+{{- $sreq := dig "requests" dict $sc }}
+{{- $slim := dig "limits" dict $sc }}
+{{- range $k := list "cpu" "memory" }}
+{{- if or (not (hasKey $sreq $k)) (ne (toString (get $sreq $k)) (toString (get $slim $k))) }}
+{{- fail (printf "auth.proxy.sidecar.resources: rt.rtCpu auto with auth.mode proxy needs the sidecar's %s request to equal its limit; a pod is Guaranteed only when every container is" $k) }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
