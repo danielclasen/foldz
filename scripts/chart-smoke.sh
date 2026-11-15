@@ -24,6 +24,7 @@ work=$(mktemp -d)
 export KUBECONFIG=$work/kubeconfig
 token=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
 forwards=()
+created=
 
 cleanup() {
   status=$?
@@ -32,13 +33,15 @@ cleanup() {
     kubectl -n "$ns" logs statefulset/foldz --all-containers || true
   fi
   for pid in ${forwards[@]+"${forwards[@]}"}; do kill "$pid" 2>/dev/null || true; done
-  kind delete cluster --name "$cluster" || true
+  # Never delete a cluster this run did not create.
+  if [ -n "$created" ]; then kind delete cluster --name "$cluster" || true; fi
   rm -rf "$work"
   exit "$status"
 }
 trap cleanup EXIT
 
 kind create cluster --name "$cluster" --image "$node_image" --wait 120s
+created=1
 kind load docker-image "$image" --name "$cluster"
 node=$cluster-control-plane
 # The pod's uid owns the domain, as the chart README requires.
