@@ -253,3 +253,42 @@ tests:
         limits: { cpu: 100m, memory: 64Mi }
     asserts:
       - notFailedTemplate: {}
+
+  - it: refuses the API and ops listeners on one port
+    set:
+      ops.port: 8080
+    asserts:
+      - failedTemplate:
+          errorPattern: "port 8080 is also used by"
+  - it: refuses the NMOS listener on the API port
+    set:
+      nmos.port: 8080
+    asserts:
+      - failedTemplate:
+          errorPattern: "port 8080 is also used by"
+  - it: refuses the sidecar on the ops port in proxy mode
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+      rt.enabled: false
+      auth.proxy.sidecar.port: 9090
+    asserts:
+      - failedTemplate:
+          errorPattern: "port 9090 is also used by"
+  - it: ignores the sidecar port outside proxy mode
+    set:
+      auth.proxy.sidecar.port: 9090
+    asserts:
+      - notFailedTemplate: {}
+  - it: refuses a ramp longer than the engine accepts
+    set:
+      engine.rampSamples: 16777217
+    asserts:
+      - failedTemplate:
+          errorPattern: "engine.rampSamples"
+  - it: refuses an empty image repository
+    set:
+      image.repository: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "image.repository"

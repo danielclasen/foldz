@@ -28,7 +28,12 @@
   },
   "properties": {
     "global": { "type": "object" },
-    "image": { "$ref": "#/definitions/image" },
+    "image": {
+      "allOf": [
+        { "$ref": "#/definitions/image" },
+        { "properties": { "repository": { "minLength": 1 } } }
+      ]
+    },
     "clusterDomain": { "type": "string", "minLength": 1 },
     "imagePullSecrets": { "type": "array" },
     "nameOverride": { "type": "string" },
@@ -68,7 +73,7 @@
         "readerMarginSamples": { "type": "integer", "minimum": 0 },
         "maxCatchupBlocks": { "type": "integer", "minimum": 0 },
         "pruneAfterBlocks": { "type": "integer", "minimum": 0 },
-        "rampSamples": { "type": "integer", "minimum": 0 }
+        "rampSamples": { "type": "integer", "minimum": 0, "maximum": 16777216 }
       }
     },
     "rt": {

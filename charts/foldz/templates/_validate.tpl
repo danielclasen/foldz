@@ -17,6 +17,19 @@ setting that has no effect.
 {{- fail "nmos.enabled: foldz does not implement NMOS yet" }}
 {{- end }}
 
+{{- $ports := dict "service.port" $v.service.port "nmos.port" $v.nmos.port "ops.port" $v.ops.port }}
+{{- if eq $v.auth.mode "proxy" }}
+{{- $_ := set $ports "auth.proxy.sidecar.port" $v.auth.proxy.sidecar.port }}
+{{- end }}
+{{- $seen := dict }}
+{{- range $k := keys $ports | sortAlpha }}
+{{- $p := toString (int (get $ports $k)) }}
+{{- if hasKey $seen $p }}
+{{- fail (printf "%s: port %s is also used by %s; the pod's containers share one network namespace and the second bind fails" $k $p (get $seen $p)) }}
+{{- end }}
+{{- $_ := set $seen $p $k }}
+{{- end }}
+
 {{- if eq $v.auth.mode "none" }}
 {{- if $v.ingress.enabled }}
 {{- fail "auth.mode none: refused with ingress.enabled; set auth.mode token or proxy" }}
