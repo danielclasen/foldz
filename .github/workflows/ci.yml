@@ -96,4 +96,8 @@ jobs:
       - name: Check the release binary runs here
         run: |
           test -s dist/THIRD-PARTY.txt
+          if grep -E '&(quot|amp|lt|gt|#x[0-9a-fA-F]+);' dist/THIRD-PARTY.txt; then
+            echo "::error::THIRD-PARTY.txt contains HTML entities"
+            exit 1
+          fi
           dist/foldz --version | grep -q '^foldz '
