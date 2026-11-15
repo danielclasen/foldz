@@ -1,0 +1,13 @@
+Third-party Rust crates in the foldz binary and their licences.
+libmxl and its dependencies: /opt/mxl/share/licenses.
+{{#each licenses}}
+
+================================================================================
+{{{name}}} ({{{id}}})
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

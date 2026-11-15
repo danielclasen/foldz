@@ -42,8 +42,21 @@ jobs:
             -w /w "$BUILDER" bash -euo pipefail -c '
               cargo fmt --all --check
               cargo clippy --workspace --all-targets --locked -- -D warnings
+              # --all-targets leaves out the e2e target, which has test = false.
+              cargo clippy --locked --test e2e -- -D warnings
               cargo test --workspace --locked
               cargo test --workspace --locked --release
+            '
+      - name: End-to-end test with SCHED_FIFO and locked memory
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --ulimit rtprio=99 --ulimit memlock=-1 \
+            -e SAMPLEZ_REQUIRE_PATHS=avx2 -e SAMPLEZ_REQUIRE_RT=1 \
+            -v "$PWD:/w" -v "$PWD/.cargo-registry:/usr/local/cargo/registry" \
+            -v "$PWD/.cargo-git:/usr/local/cargo/git" \
+            -w /w "$BUILDER" bash -euo pipefail -c '
+              cargo test --locked --test e2e
+              cargo test --locked --release --test e2e
             '
       # Saved from main only, so per-PR snapshots do not evict the main
       # cache from the shared Actions cache.
@@ -55,3 +68,36 @@ jobs:
             .cargo-registry
             .cargo-git
           key: cargo-${{ hashFiles('Cargo.lock') }}-${{ env.BUILDER }}-${{ github.sha }}
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: foldz:ci
+          cache-from: type=gha,scope=image
+          cache-to: type=gha,scope=image,mode=max
+      - name: Start the image and check its listeners
+        run: docker/smoke.sh foldz:ci
+      - name: Build the release binary
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: dist
+          outputs: type=local,dest=dist
+          cache-from: type=gha,scope=image
+      - name: Check the release binary runs here
+        run: |
+          test -s dist/THIRD-PARTY.txt
+          if grep -E '&(quot|amp|lt|gt|#x[0-9a-fA-F]+);' dist/THIRD-PARTY.txt; then
+            echo "::error::THIRD-PARTY.txt contains HTML entities"
+            exit 1
+          fi
+          dist/foldz --version | grep -q '^foldz '
