@@ -188,6 +188,12 @@ fn domains_are_checked() {
     let mut v = base();
     v["domains"] = json!([{ "name": "a", "path": "mxl/a" }]);
     assert_invalid(v, "domains[0]", "not absolute");
+    // Spellings of one directory would defeat the duplicate-path check.
+    for path in ["/mxl/a/", "/mxl//a", "/mxl/./a", "/mxl/a/.", "/mxl/b/../a"] {
+        let mut v = base();
+        v["domains"] = json!([{ "name": "a", "path": "/mxl/a" }, { "name": "b", "path": path }]);
+        assert_invalid(v, "domains[1]", "segment");
+    }
 }
 
 #[test]

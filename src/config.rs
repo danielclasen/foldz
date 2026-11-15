@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use samplez_service::config::{ApiConfig, AuthConfig, Listeners};
 use serde::Deserialize;
@@ -395,7 +395,21 @@ impl Config {
             if !d.path.starts_with('/') {
                 return err(at, format!("path {:?} is not absolute", d.path));
             }
-            if !paths.insert(d.path.as_str()) {
+            let normal: PathBuf = Path::new(&d.path).components().collect();
+            if normal.as_os_str() != d.path.as_str()
+                || normal
+                    .components()
+                    .any(|c| matches!(c, Component::ParentDir))
+            {
+                return err(
+                    at,
+                    format!(
+                        "path {:?} has a trailing or repeated '/' or a '.' or '..' segment",
+                        d.path
+                    ),
+                );
+            }
+            if !paths.insert(normal) {
                 return err(at, format!("path {:?} is used twice", d.path));
             }
             domains.push(d.name.as_str());
