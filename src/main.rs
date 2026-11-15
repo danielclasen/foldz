@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use foldz::api::{self, Downmix};
@@ -135,6 +136,10 @@ fn main() -> ExitCode {
     ops.set_engine_started(true);
 
     let exporter = Exporter::new(ops.clone(), slot.clone());
+    // Set before the service thread signals, so it is set when sigwait
+    // returns for that signal.
+    let serve_failed = Arc::new(AtomicBool::new(false));
+    let failed = serve_failed.clone();
     let served = std::thread::Builder::new()
         .name("foldz-service".into())
         .stack_size(SERVICE_STACK)
@@ -145,30 +150,30 @@ fn main() -> ExitCode {
                     () = exporter.run() => unreachable!("the exporter never returns"),
                 }
             });
-            if let Err(e) = &result {
+            if let Err(e) = result {
                 eprintln!("foldz: serving: {e}");
+                failed.store(true, Ordering::SeqCst);
             }
             // SAFETY: SIGTERM to this process ends the sigwait below.
             unsafe { libc::kill(libc::getpid(), libc::SIGTERM) };
-            result
         });
-    let served = match served {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("foldz: service thread: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+    if let Err(e) = served {
+        eprintln!("foldz: service thread: {e}");
+        return ExitCode::FAILURE;
+    }
 
     let mut sig = 0;
     // SAFETY: `set` is a valid signal set and `sig` is writable.
     unsafe { libc::sigwait(&set, &mut sig) };
     eprintln!("foldz: signal {sig}, stopping");
     ops.set_engine_started(false);
-    if let Some(engine) = slot.lock().expect("engine lock poisoned").take() {
+    // The guard is dropped before stop: the listeners lock the slot too,
+    // and would wait for stop to return.
+    let engine = slot.lock().expect("engine lock poisoned").take();
+    if let Some(engine) = engine {
         engine.stop();
     }
-    if served.is_finished() {
+    if serve_failed.load(Ordering::SeqCst) {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
