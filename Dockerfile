@@ -40,11 +40,7 @@ FROM debian:trixie-20261027@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8f
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-# libmxl is a C++ library.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends libstdc++6 \
- && rm -rf /var/lib/apt/lists/*
-
+# libmxl is a C++ library; the base image ships libstdc++6 for apt.
 COPY --from=build /opt/mxl/lib/libmxl.so.1.1 /opt/mxl/lib/libmxl.so.1.1
 RUN ln -s libmxl.so.1.1 /opt/mxl/lib/libmxl.so.1 \
  && ln -s libmxl.so.1 /opt/mxl/lib/libmxl.so
