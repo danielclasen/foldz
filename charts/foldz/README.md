@@ -162,8 +162,9 @@ refuses TLS on the API listener, which only the sidecar reaches.
 - `tls.mode: certManager` creates a cert-manager `Certificate` for the
   in-cluster names of the Services in `tls.listeners` plus
   `tls.certManager.dnsNames`, issued by `tls.certManager.issuerRef` into the
-  Secret `<release>-foldz-tls`. Rendering fails when the cluster serves no
-  `cert-manager.io/v1` `Certificate`.
+  Secret `<fullname>-tls`, which is `foldz-tls` for a release named `foldz`.
+  Rendering fails when the cluster serves no `cert-manager.io/v1`
+  `Certificate`.
 
 For use without a proxy in front, expose the API Service as `LoadBalancer`
 or `NodePort` with `auth.mode: token`, serve TLS from one of the two modes
