@@ -1,0 +1,13 @@
+# Plain HTTP inside the pod, TLS terminated in front of it by an ingress
+# controller (or a mesh sidecar), token auth.
+auth:
+  mode: token
+  token:
+    existingSecret: foldz-api-token
+ingress:
+  enabled: true
+  className: nginx
+  hosts: [foldz.example.org]
+  tls:
+    - secretName: foldz-example-org
+      hosts: [foldz.example.org]

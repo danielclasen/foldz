@@ -1,0 +1,208 @@
+{{- include "foldz.validate" . }}
+{{- $proxy := eq .Values.auth.mode "proxy" }}
+{{- $tls := or (include "foldz.tlsOn" (dict "ctx" . "listener" "api")) (include "foldz.tlsOn" (dict "ctx" . "listener" "nmos")) }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "foldz.fullname" . }}
+  labels:
+    {{- include "foldz.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  serviceName: {{ include "foldz.headlessService" . }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "foldz.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "foldz.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include "foldz.config" . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "foldz.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: foldz
+          image: {{ include "foldz.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/foldz/config.json
+          env:
+            # Read by the RT set-up to decide whether the CPU set is an
+            # exclusive allocation.
+            - name: SAMPLEZ_CPU_REQUEST_MILLICORES
+              valueFrom:
+                resourceFieldRef:
+                  containerName: foldz
+                  resource: requests.cpu
+                  divisor: 1m
+            - name: SAMPLEZ_CPU_LIMIT_MILLICORES
+              valueFrom:
+                resourceFieldRef:
+                  containerName: foldz
+                  resource: limits.cpu
+                  divisor: 1m
+          ports:
+            - name: api
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: nmos
+              containerPort: {{ .Values.nmos.port }}
+              protocol: TCP
+            - name: ops
+              containerPort: {{ .Values.ops.port }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: ops
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ops
+            periodSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: ops
+            periodSeconds: 2
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            {{- if .Values.rt.enabled }}
+            # The binary carries cap_sys_nice,cap_ipc_lock in its permitted
+            # file capabilities only; no_new_privs would keep exec from
+            # granting them.
+            allowPrivilegeEscalation: true
+            capabilities:
+              drop: [ALL]
+              add: [SYS_NICE, IPC_LOCK]
+            {{- else }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/foldz
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- range $i, $d := .Values.mxl.domains }}
+            - name: mxl-{{ $i }}
+              mountPath: /mxl/{{ $d.name }}
+            {{- end }}
+            {{- if eq .Values.auth.mode "token" }}
+            # A directory mount, not subPath, so a rotated Secret reaches
+            # the file.
+            - name: token
+              mountPath: /var/run/secrets/foldz/token
+              readOnly: true
+            {{- end }}
+            {{- if $tls }}
+            - name: tls
+              mountPath: /var/run/secrets/foldz/tls
+              readOnly: true
+            {{- end }}
+        {{- if $proxy }}
+        {{- $s := .Values.auth.proxy.sidecar }}
+        - name: auth-proxy
+          image: {{ include "foldz.sidecarImage" . }}
+          imagePullPolicy: {{ $s.image.pullPolicy }}
+          args:
+            {{- tpl (toYaml (concat $s.args $s.extraArgs)) . | nindent 12 }}
+          {{- with $s.env }}
+          env:
+            {{- tpl (toYaml .) $ | nindent 12 }}
+          {{- end }}
+          {{- with $s.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: proxy
+              containerPort: {{ $s.port }}
+              protocol: TCP
+          {{- with $s.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "foldz.fullname" . }}
+        - name: tmp
+          emptyDir: {}
+        {{- range $i, $d := .Values.mxl.domains }}
+        - name: mxl-{{ $i }}
+          {{- if $d.hostPath }}
+          hostPath:
+            path: {{ $d.hostPath }}
+            type: Directory
+          {{- else }}
+          {{- toYaml $d.volume | nindent 10 }}
+          {{- end }}
+        {{- end }}
+        {{- if eq .Values.auth.mode "token" }}
+        - name: token
+          secret:
+            secretName: {{ .Values.auth.token.existingSecret }}
+            items:
+              - key: {{ .Values.auth.token.key }}
+                path: {{ .Values.auth.token.key }}
+        {{- end }}
+        {{- if $tls }}
+        - name: tls
+          secret:
+            secretName: {{ include "foldz.tlsSecret" . }}
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,16 @@
+# The product section every render scenario shares: one 5.1 input folded to
+# stereo.
+config:
+  inputs:
+    - name: main
+      channels: 8
+      layout: [L, R, C, LFE, Ls, Rs, "-", "-"]
+      flow: 7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55
+  outputs:
+    - name: stereo
+      flows: [0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11]
+      label: Programme stereo
+      layout: [L, R]
+      preset: bs775-3_2-to-2_0
+      lfe: drop
+      gainDb: 0

@@ -1,0 +1,37 @@
+# OIDC through the oauth2-proxy sidecar, a CSI-backed MXL domain, RT off and
+# the NetworkPolicy on.
+auth:
+  mode: proxy
+  proxy:
+    groupRoles:
+      audio-operators: operator
+      audio-viewers: viewer
+    sidecar:
+      extraArgs:
+        - --provider=oidc
+        - --oidc-issuer-url=https://login.example.org/realms/media
+        - --email-domain=*
+      envFrom:
+        - secretRef:
+            name: foldz-oauth2-proxy
+ingress:
+  enabled: true
+  hosts: [foldz.example.org]
+rt:
+  enabled: false
+mxl:
+  domains:
+    - name: a
+      volume:
+        csi:
+          driver: mxl.example.org
+          volumeAttributes:
+            domain: a
+networkPolicy:
+  enabled: true
+  nmosFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: nmos-controllers
+    - ipBlock:
+        cidr: 192.0.2.0/24

@@ -1,0 +1,21 @@
+{{- if eq .Values.tls.mode "certManager" }}
+{{- $names := list }}
+{{- if has "api" .Values.tls.listeners }}
+{{- $names = concat $names (include "foldz.serviceNames" (dict "ctx" . "name" (include "foldz.fullname" .)) | fromJsonArray) }}
+{{- end }}
+{{- if has "nmos" .Values.tls.listeners }}
+{{- $names = concat $names (include "foldz.serviceNames" (dict "ctx" . "name" (include "foldz.nmosService" .)) | fromJsonArray) }}
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "foldz.fullname" . }}
+  labels:
+    {{- include "foldz.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "foldz.tlsSecret" . }}
+  issuerRef:
+    {{- toYaml .Values.tls.certManager.issuerRef | nindent 4 }}
+  dnsNames:
+    {{- toYaml (concat $names .Values.tls.certManager.dnsNames | uniq) | nindent 4 }}
+{{- end }}

@@ -1,0 +1,294 @@
+# Values the binary would refuse, or that would have no effect, fail
+# rendering with a message naming the value.
+suite: validation
+templates: [statefulset.yaml]
+values: [../ci/base.yaml]
+tests:
+  - it: refuses more than one audio replica while replication is not implemented
+    set:
+      replicas: 2
+    asserts:
+      - failedTemplate:
+          errorPattern: "replicas: 2 is not supported; foldz does not implement replication yet"
+  - it: refuses the witness while replication is not implemented
+    set:
+      witness.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "witness.enabled: foldz does not implement replication yet"
+  - it: refuses NMOS while it is not implemented
+    set:
+      nmos.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "nmos.enabled: foldz does not implement NMOS yet"
+  - it: refuses replication settings the chart does not have
+    set:
+      replica.voters: 3
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'replica' not allowed"
+
+  - it: refuses auth none behind an ingress
+    set:
+      ingress.enabled: true
+      ingress.hosts: [foldz.example.org]
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.mode none: refused with ingress.enabled"
+  - it: refuses auth none on a Service reachable from outside the cluster
+    set:
+      service.type: LoadBalancer
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.mode none: refused with service.type LoadBalancer"
+  - it: needs the token Secret in token mode
+    set:
+      auth.mode: token
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.token.existingSecret: required with auth.mode token"
+  - it: refuses TLS on the API listener behind the auth sidecar
+    set:
+      auth.mode: proxy
+      tls.mode: existingSecret
+      tls.existingSecret: foldz-tls
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.listeners: api is refused with auth.mode proxy"
+  - it: needs group roles in proxy mode, since the binary gives nobody a role without them
+    set:
+      auth.mode: proxy
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.proxy.groupRoles: required with auth.mode proxy"
+  - it: needs a sidecar image in proxy mode, which the schema lets be empty
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+      auth.proxy.sidecar.image.repository: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.proxy.sidecar.image.repository: required with auth.mode proxy"
+
+  - it: needs the Secret name in existingSecret mode
+    set:
+      tls.mode: existingSecret
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.existingSecret: required with tls.mode existingSecret"
+  - it: needs an issuer in certManager mode
+    set:
+      tls.mode: certManager
+    capabilities:
+      apiVersions: [cert-manager.io/v1/Certificate]
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.certManager.issuerRef.name: required with tls.mode certManager"
+  - it: refuses certManager mode where cert-manager is not installed
+    set:
+      tls.mode: certManager
+      tls.certManager.issuerRef.name: ca
+    asserts:
+      - failedTemplate:
+          errorPattern: "the cluster serves no cert-manager.io/v1 Certificate"
+  - it: refuses TLS on no listener
+    set:
+      tls.mode: existingSecret
+      tls.existingSecret: foldz-tls
+      tls.listeners: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.listeners: empty with tls.mode existingSecret"
+  - it: refuses an unknown TLS mode
+    set:
+      tls.mode: selfSigned
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.mode"
+
+  - it: needs a host for the ingress
+    set:
+      auth.mode: token
+      auth.token.existingSecret: t
+      ingress.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "ingress.hosts: at least one host is required"
+
+  - it: needs an MXL domain
+    set:
+      mxl.domains: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "mxl.domains: at least one domain is required"
+  - it: refuses a domain name used twice
+    set:
+      mxl.domains:
+        - { name: a, hostPath: /dev/shm/mxl/a }
+        - { name: a, hostPath: /dev/shm/mxl/b }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'mxl.domains\[1\]: name "a" is used twice'
+  - it: refuses a domain with both hostPath and volume
+    set:
+      mxl.domains:
+        - { name: a, hostPath: /dev/shm/mxl/a, volume: { emptyDir: {} } }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'mxl.domains\[0\]: hostPath and volume are mutually exclusive'
+  - it: refuses a domain with neither hostPath nor volume
+    set:
+      mxl.domains:
+        - { name: a }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'mxl.domains\[0\]: hostPath or volume is required'
+  - it: refuses hostPath inside a domain's volume
+    set:
+      mxl.domains:
+        - { name: a, volume: { hostPath: { path: /dev/shm/mxl/a } } }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'mxl.domains\[0\].volume: use hostPath on the domain, not inside volume'
+  - it: refuses a domain name that is no single path segment
+    set:
+      mxl.domains:
+        - { name: ../etc, hostPath: /dev/shm/mxl/a }
+    asserts:
+      - failedTemplate:
+          errorPattern: "mxl.domains.0.name"
+
+  - it: refuses domains inside config, which has one source in mxl.domains
+    set:
+      config.domains: [{ name: a, path: /mxl/a }]
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'domains' not allowed"
+  - it: needs an input
+    set:
+      config.inputs: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "config.inputs: at least one input is required"
+  - it: needs an output
+    set:
+      config.outputs: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "config.outputs: at least one output is required"
+  - it: needs one member flow per replica
+    set:
+      config.outputs:
+        - name: stereo
+          flows:
+            - 0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11
+            - 0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c12
+          mergedFlow: 0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c13
+          layout: [L, R]
+          preset: bs775-3_2-to-2_0
+    asserts:
+      - failedTemplate:
+          errorPattern: 'config.outputs\[0\].flows: has 2 flow ids for 1 replica'
+
+  - it: refuses a CPU request below the limit with RT auto pinning
+    set:
+      resources.requests.cpu: 1500m
+    asserts:
+      - failedTemplate:
+          errorPattern: "rt.rtCpu auto needs the CPU request to equal the limit in whole CPUs \\(request 1500m, limit 2\\)"
+  - it: refuses fractional CPUs with RT auto pinning
+    set:
+      resources.requests.cpu: 1500m
+      resources.limits.cpu: 1500m
+    asserts:
+      - failedTemplate:
+          errorPattern: "in whole CPUs"
+  - it: accepts equal CPU in different units with RT auto pinning
+    set:
+      resources.requests.cpu: 2000m
+    asserts:
+      - notFailedTemplate: {}
+  - it: needs CPU requests and limits with RT auto pinning
+    set:
+      resources.limits: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "rt.rtCpu auto needs resources.requests.cpu and resources.limits.cpu"
+  - it: leaves CPU alone without auto pinning
+    set:
+      resources.limits: null
+      rt.rtCpu: none
+    asserts:
+      - notFailedTemplate: {}
+  - it: refuses a memory request below the limit with RT auto pinning
+    set:
+      resources.requests.memory: 256Mi
+    asserts:
+      - failedTemplate:
+          errorPattern: "rt.rtCpu auto needs resources.requests.memory equal to resources.limits.memory \\(request 256Mi, limit 512Mi\\)"
+  - it: refuses a sidecar without equal requests and limits with RT auto pinning
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.proxy.sidecar.resources: rt.rtCpu auto with auth.mode proxy needs the sidecar's cpu request to equal its limit"
+  - it: refuses a sidecar memory request below its limit with RT auto pinning
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+      auth.proxy.sidecar.resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { cpu: 100m, memory: 128Mi }
+    asserts:
+      - failedTemplate:
+          errorPattern: "the sidecar's memory request to equal its limit"
+  - it: accepts a sidecar with equal requests and limits with RT auto pinning
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+      auth.proxy.sidecar.resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { cpu: 100m, memory: 64Mi }
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: refuses the API and ops listeners on one port
+    set:
+      ops.port: 8080
+    asserts:
+      - failedTemplate:
+          errorPattern: "port 8080 is also used by"
+  - it: refuses the NMOS listener on the API port
+    set:
+      nmos.port: 8080
+    asserts:
+      - failedTemplate:
+          errorPattern: "port 8080 is also used by"
+  - it: refuses the sidecar on the ops port in proxy mode
+    set:
+      auth.mode: proxy
+      auth.proxy.groupRoles: { audio-viewers: viewer }
+      rt.enabled: false
+      auth.proxy.sidecar.port: 9090
+    asserts:
+      - failedTemplate:
+          errorPattern: "port 9090 is also used by"
+  - it: ignores the sidecar port outside proxy mode
+    set:
+      auth.proxy.sidecar.port: 9090
+    asserts:
+      - notFailedTemplate: {}
+  - it: refuses a ramp longer than the engine accepts
+    set:
+      engine.rampSamples: 16777217
+    asserts:
+      - failedTemplate:
+          errorPattern: "engine.rampSamples"
+  - it: refuses an empty image repository
+    set:
+      image.repository: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "image.repository"
