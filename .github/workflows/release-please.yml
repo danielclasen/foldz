@@ -155,6 +155,7 @@ jobs:
       packages: write
     env:
       VERSION: ${{ needs.release-please.outputs.version }}
+      # helm push appends the chart name: oci://ghcr.io/danielclasen/foldz/charts/foldz
       CHARTS: oci://ghcr.io/${{ github.repository }}/charts
       HELM_VERSION: v4.2.2
       HELM_SHA256: 9adafecab4d406853bba163a70e9f104f47dbbf65ce24b7653bae7e36150bcb6
