@@ -67,11 +67,14 @@ fn main() -> ExitCode {
         api: config.api.clone(),
     };
     let state = Arc::new(Standalone::new(hostname()));
+    // samplez-service reports its errors as config errors: the auth and
+    // TLS settings, the files they name, and the random bits drawn for
+    // certificates and session ids.
     let service = match Service::new(service_config, ops.clone(), state) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("foldz: service: {e}");
-            return ExitCode::FAILURE;
+            eprintln!("foldz: config: {e}");
+            return ExitCode::from(2);
         }
     };
     let slot: api::EngineSlot = Arc::new(Mutex::new(None));

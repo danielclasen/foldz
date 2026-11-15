@@ -671,3 +671,37 @@ fn there_is_no_machine_listener() {
     v["auth"] = json!({ "mode": "proxy", "machineToken": { "file": "/run/token" } });
     assert_invalid(v, "auth.machineToken", "no machine listener");
 }
+
+/// Runs the foldz binary on `v` and returns its exit status and stderr.
+fn run_foldz(name: &str, v: &Value) -> (Option<i32>, String) {
+    let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::write(&path, v.to_string()).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_foldz"))
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn config_errors_exit_2_before_anything_starts() {
+    let mut v = base();
+    v["inputs"][0]["channels"] = json!(7);
+    let (code, stderr) = run_foldz("foldz-exit-invalid.json", &v);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("foldz: config: "), "{stderr}");
+
+    // A token file that cannot be read is found once the listeners'
+    // settings are checked, still before any listener or flow exists.
+    let mut v = base();
+    v["rt"] = json!({ "enabled": false });
+    v["auth"] = json!({ "mode": "token", "token": { "file": "/nonexistent/foldz-token" } });
+    let (code, stderr) = run_foldz("foldz-exit-token.json", &v);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("foldz: config: "), "{stderr}");
+    assert!(!stderr.contains("listener on"), "{stderr}");
+}

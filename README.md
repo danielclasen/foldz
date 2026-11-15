@@ -158,9 +158,12 @@ docker run --rm --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp \
   ghcr.io/danielclasen/foldz:<version>
 ```
 
-SIGINT or SIGTERM stops foldz; it deletes its output flows on the way out.
-A config error exits with status 2 before anything starts, and a
-listener that cannot bind stops the start before any flow is created.
+SIGINT or SIGTERM stops foldz; it deletes its output flows on the way out
+and exits with status 0. A config error, a token or TLS file that cannot
+be read included, exits with status 2 before anything starts. A listener
+that cannot bind stops the start before any flow is created and exits
+with status 1, as does an engine that fails to start or a listener that
+fails while serving.
 
 ### Real-time setup
 
