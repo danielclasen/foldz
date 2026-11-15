@@ -7,6 +7,10 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 
+# The cluster's DNS domain, for the Services' fully qualified names in
+# api.allowedHosts and the certManager Certificate.
+clusterDomain: cluster.local
+
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""

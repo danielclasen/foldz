@@ -16,6 +16,7 @@ renders TLS served by the product from a cert-manager Certificate:
         - r-foldz
         - r-foldz.audio
         - r-foldz.audio.svc
+        - r-foldz.audio.svc.cluster.local
         - foldz.example.org
       issuerRef:
         group: cert-manager.io
@@ -31,7 +32,8 @@ renders TLS served by the product from a cert-manager Certificate:
             "allowedHosts": [
               "r-foldz",
               "r-foldz.audio",
-              "r-foldz.audio.svc"
+              "r-foldz.audio.svc",
+              "r-foldz.audio.svc.cluster.local"
             ],
             "allowedOrigins": []
           },
@@ -275,7 +277,7 @@ renders TLS served by the product from a cert-manager Certificate:
       template:
         metadata:
           annotations:
-            checksum/config: 63b01902cd3c23c962f4c3b3f3c8d90dd85e3030d57a06e054f5d006f001bde4
+            checksum/config: 0af3db300100c04c894e3bd76136dda9f3bc9f210c8473ccdf8050851c99ec04
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -410,6 +412,7 @@ renders TLS served by the product from an existing Secret:
               "r-foldz",
               "r-foldz.audio",
               "r-foldz.audio.svc",
+              "r-foldz.audio.svc.cluster.local",
               "foldz.example.org"
             ],
             "allowedOrigins": [
@@ -661,7 +664,7 @@ renders TLS served by the product from an existing Secret:
       template:
         metadata:
           annotations:
-            checksum/config: fc813a25a991efa872080919bd2355620cedffa26cc1b06f0474662eb6a87b7f
+            checksum/config: 627b94ee18f3fb10871b6f33c16965f18edaa2168c11505dc4b745d2d64b2217
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -795,7 +798,8 @@ renders auth none, plain HTTP, in-cluster only:
             "allowedHosts": [
               "r-foldz",
               "r-foldz.audio",
-              "r-foldz.audio.svc"
+              "r-foldz.audio.svc",
+              "r-foldz.audio.svc.cluster.local"
             ],
             "allowedOrigins": []
           },
@@ -1031,7 +1035,7 @@ renders auth none, plain HTTP, in-cluster only:
       template:
         metadata:
           annotations:
-            checksum/config: d668cf1ee59dee53b681cea0320134cfbf6203b547db12ee26d9143887b59923
+            checksum/config: 143489907854ba270c0df83ec833cb17a0a8e76ae066b57ded2521dfea7c4f87
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -1146,6 +1150,7 @@ renders plain HTTP behind a TLS-terminating ingress with token auth:
               "r-foldz",
               "r-foldz.audio",
               "r-foldz.audio.svc",
+              "r-foldz.audio.svc.cluster.local",
               "foldz.example.org"
             ],
             "allowedOrigins": [
@@ -1416,7 +1421,7 @@ renders plain HTTP behind a TLS-terminating ingress with token auth:
       template:
         metadata:
           annotations:
-            checksum/config: ca8fda7b62115b86587a04df0e876373ae3bf80b2fbf2e048ff3e67e0c16fe82
+            checksum/config: 02d4404352aef5bc145eb765c4ea59104852d4d35ac1d63d1b95f86b2ca40dd9
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -1540,6 +1545,7 @@ renders the oauth2-proxy sidecar, a CSI domain and the NetworkPolicy:
               "r-foldz",
               "r-foldz.audio",
               "r-foldz.audio.svc",
+              "r-foldz.audio.svc.cluster.local",
               "foldz.example.org"
             ],
             "allowedOrigins": [
@@ -1845,7 +1851,7 @@ renders the oauth2-proxy sidecar, a CSI domain and the NetworkPolicy:
       template:
         metadata:
           annotations:
-            checksum/config: 937df62f91b46aee3a13ad1d5122f7ee7605bc0fcdf55f9c46e5ce4c8284a51d
+            checksum/config: fccc0e1ae74e2cf9a7e8d5c4ed8ea9feb193aab21bae54cf7636c6f93184fa73
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r

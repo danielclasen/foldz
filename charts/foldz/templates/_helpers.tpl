@@ -67,7 +67,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/* The names an in-cluster client reaches a Service by. */}}
 {{- define "foldz.serviceNames" -}}
 {{- $ns := .ctx.Release.Namespace }}
-{{- list .name (printf "%s.%s" .name $ns) (printf "%s.%s.svc" .name $ns) | toJson }}
+{{- list .name (printf "%s.%s" .name $ns) (printf "%s.%s.svc" .name $ns) (printf "%s.%s.svc.%s" .name $ns .ctx.Values.clusterDomain) | toJson }}
 {{- end }}
 
 {{- define "foldz.tlsOn" -}}

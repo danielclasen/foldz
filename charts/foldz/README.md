@@ -56,6 +56,7 @@ config:
 | `auth.token.existingSecret`, `.key` | `""`, `token` | |
 | `auth.proxy.userHeader`, `.groupsHeader`, `.groupRoles` | `X-Forwarded-User`, `X-Forwarded-Groups`, `{}` | `groupRoles` maps a group to `viewer` or `operator`; required in `proxy` mode |
 | `auth.proxy.sidecar.*` | oauth2-proxy v7.15.5 by digest, port 4180 | `args` and `env` go through `tpl`; `extraArgs` is appended |
+| `clusterDomain` | `cluster.local` | the DNS domain of the Services' fully qualified names, which `api.allowedHosts` and the certManager Certificate include |
 | `api.allowedHosts`, `.allowedOrigins` | `[]` | added to the binary's defaults, the API Service's names and the ingress hosts |
 | `tls.mode` | `none` | `none`, `existingSecret` or `certManager` |
 | `tls.listeners` | `[api]` | `api`, `nmos` |

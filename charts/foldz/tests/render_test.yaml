@@ -121,7 +121,15 @@ tests:
           pattern: '"api": \{\s+"bind": "0.0.0.0",\s+"port": 8080\s+\}'
       - matchRegex:
           path: data["config.json"]
-          pattern: '"allowedHosts": \[\s+"r-foldz",\s+"r-foldz.audio",\s+"r-foldz.audio.svc"\s+\]'
+          pattern: '"allowedHosts": \[\s+"r-foldz",\s+"r-foldz.audio",\s+"r-foldz.audio.svc",\s+"r-foldz.audio.svc.cluster.local"\s+\]'
+  - it: puts the cluster domain into the fully qualified allowed host
+    set:
+      clusterDomain: k8s.example.org
+    template: configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"r-foldz.audio.svc.k8s.example.org"'
   - it: reads the token from a Secret mounted as a directory, so a rotation reaches it
     set:
       auth.mode: token
@@ -197,7 +205,7 @@ tests:
       - template: certificate.yaml
         equal:
           path: spec.dnsNames
-          value: [r-foldz, r-foldz.audio, r-foldz.audio.svc, r-foldz-nmos, r-foldz-nmos.audio, r-foldz-nmos.audio.svc]
+          value: [r-foldz, r-foldz.audio, r-foldz.audio.svc, r-foldz.audio.svc.cluster.local, r-foldz-nmos, r-foldz-nmos.audio, r-foldz-nmos.audio.svc, r-foldz-nmos.audio.svc.cluster.local]
       - template: statefulset.yaml
         contains:
           path: spec.template.spec.volumes
