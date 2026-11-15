@@ -42,6 +42,8 @@ jobs:
             -w /w "$BUILDER" bash -euo pipefail -c '
               cargo fmt --all --check
               cargo clippy --workspace --all-targets --locked -- -D warnings
+              # --all-targets leaves out the e2e target, which has test = false.
+              cargo clippy --locked --test e2e -- -D warnings
               cargo test --workspace --locked
               cargo test --workspace --locked --release
             '
