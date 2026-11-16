@@ -152,14 +152,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build the image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          load: true
-          tags: foldz:ci
-          cache-from: type=gha,scope=image
       - name: Install helm, kind and kubectl
         run: |
           bin="$RUNNER_TEMP/bin"
@@ -175,5 +167,33 @@ jobs:
           echo "$KUBECTL_SHA256  $bin/kubectl" | sha256sum -c -
           chmod +x "$bin/kind" "$bin/kubectl"
           echo "$bin" >> "$GITHUB_PATH"
+      # The cluster comes up while the image builds; the node image is
+      # the one the script pins.
+      - name: Create the kind cluster in the background
+        run: |
+          node_image=$(sed -n 's/^node_image=//p' scripts/chart-smoke.sh)
+          test -n "$node_image"
+          # shellcheck disable=SC2016
+          nohup bash -c 'kind create cluster --name foldz-smoke --image "$1" --wait 120s \
+            > "$RUNNER_TEMP/kind.log" 2>&1; echo $? > "$RUNNER_TEMP/kind.status"' \
+            _ "$node_image" > /dev/null 2>&1 &
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: foldz:ci
+          cache-from: type=gha,scope=image
       - name: Install the chart into kind and check the pod and its API
-        run: scripts/chart-smoke.sh foldz:ci
+        run: |
+          waited=0
+          # shellcheck disable=SC2016
+          timeout 300 bash -c 'until [ -s "$RUNNER_TEMP/kind.status" ]; do sleep 1; done' || waited=$?
+          cat "$RUNNER_TEMP/kind.log"
+          if [ "$waited" != 0 ]; then
+            echo "::error::the kind cluster was not created within 300 s"
+            exit 1
+          fi
+          test "$(cat "$RUNNER_TEMP/kind.status")" = 0
+          KIND_CLUSTER_EXISTS=1 KIND_CLUSTER=foldz-smoke scripts/chart-smoke.sh foldz:ci
