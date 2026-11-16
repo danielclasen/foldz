@@ -5,6 +5,8 @@
 # rtCpu none. Token auth, a hostPath MXL domain and the config of
 # ci/base.yaml.
 # Needs docker, kind, kubectl, helm and curl on PATH.
+# With KIND_CLUSTER_EXISTS=1 it uses the cluster KIND_CLUSTER names,
+# created by the caller from the node image below, and leaves it in place.
 set -euo pipefail
 
 image=${1:?usage: scripts/chart-smoke.sh <repository>:<tag> of a local image}
@@ -41,8 +43,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-kind create cluster --name "$cluster" --image "$node_image" --wait 120s
-created=1
+if [ "${KIND_CLUSTER_EXISTS:-}" = 1 ]; then
+  kind export kubeconfig --name "$cluster"
+else
+  kind create cluster --name "$cluster" --image "$node_image" --wait 120s
+  created=1
+fi
 
 kind load docker-image "$image" --name "$cluster"
 node=$cluster-control-plane
