@@ -30,17 +30,21 @@ flowchart LR
   in2["input flow<br/>8 channels"] --> r["output pair<br/>shuffle"] --> o3["output flow<br/>2 channels"]
 ```
 
-Not in this version: NMOS (`nmos.enabled: true` is refused), replicated
-outputs (more than one entry in an output's `flows` is refused), meters,
-loudness and over counts.
+Not in this version: NMOS (`nmos.enabled: true` is refused) and
+replicated outputs (more than one entry in an output's `flows` is
+refused).
 
 ## Quick start
 
 foldz needs an MXL domain, a directory on tmpfs shared with the processes
-that write and read its flows. This folds a 5.1 flow to stereo with the
-image, as the calling user, with the API and ops listeners on localhost:
+that write and read its flows. This builds the image from this
+repository and folds a 5.1 flow to stereo with it, as the calling user,
+with the API and ops listeners on localhost. Releases publish the same
+image as `ghcr.io/danielclasen/foldz:<version>`, starting with the first
+release.
 
 ```sh
+docker build -t foldz:local .
 mkdir -p /dev/shm/mxl/studio
 cat > config.json <<'JSON'
 {
@@ -64,7 +68,7 @@ docker run --rm --name foldz --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp
   -v /dev/shm/mxl/studio:/mxl/studio \
   -v "$PWD/config.json:/etc/foldz/config.json:ro" \
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:9090:9090 \
-  ghcr.io/danielclasen/foldz:<version>
+  foldz:local
 ```
 
 In another shell:
@@ -134,9 +138,9 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 | `engine.sampleRate` | `48000` | the only rate accepted |
 | `engine.blockSize` | `48` | samples per block, 16 to 1024 |
 | `engine.readerMarginSamples` | `576` | read delay behind libmxl's clock |
-| `engine.maxCatchupBlocks` | `2` | late blocks processed in order before skipping to the newest |
-| `engine.pruneAfterBlocks` | `50` | blocks a stalled input stays in the read group |
-| `engine.rampSamples` | `480` | input fade in after a gap |
+| `engine.maxCatchupBlocks` | `2` | overdue blocks processed in order after a late wake; beyond that only the newest block is processed |
+| `engine.pruneAfterBlocks` | `50` | blocks of a frozen producer head before the input is pruned; raised to twice the producer's `maxCommitBatchSizeHint` plus `readerMarginSamples` when that is longer |
+| `engine.rampSamples` | `480` | length of every gain ramp and input fade |
 | `rt.enabled` | `true` | `false` skips capabilities, memory locking and `SCHED_FIFO` |
 | `rt.priority` | `70` | `SCHED_FIFO` priority, 1 to 99 |
 | `rt.rtCpu` | `auto` | `auto`, `none`, `first`, `last` or an index into the allowed CPUs |
@@ -284,6 +288,11 @@ umask 077; openssl rand -hex 32 > /etc/foldz/token
 curl --cacert cert.pem -H "Authorization: Bearer $(cat /etc/foldz/token)" \
   https://foldz.example:8443/api/v1/downmix
 ```
+
+foldz reads the token, certificate and key files as the uid it runs as;
+a file that uid cannot read stops the start with exit status 2. The
+`umask 077` file above is readable by its owner only, so it suits a
+container started with `--user "$(id -u):$(id -g)"` by the same user.
 
 For browsers, `POST /api/v1/login` with the JSON body `{"token": "..."}`
 and the header `X-Samplez-Request: 1` exchanges the token for a session
