@@ -161,7 +161,7 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 | `nmos.seed`, `nmos.seedName` | | a UUID or a name the resource ids derive from, one of them required with NMOS enabled; the same one gives the same ids after a restart |
 | `nmos.advertiseHost` | | host or address controllers reach the NMOS listener at; required with NMOS enabled |
 | `nmos.advertisePort` | `0` | `0` advertises `listeners.nmos.port` |
-| `nmos.registry.url` | | `http://host[:port]` of a Registration API; set, no DNS-SD browsing |
+| `nmos.registry.url` | | a Registration API, `http://host[:port]` with NMOS enabled; set, no DNS-SD browsing |
 | `nmos.registry.dnsSdDomain` | | the unicast DNS-SD domain browsed; empty browses the resolver's search domains, then multicast DNS-SD |
 | `nmos.heartbeatS` | `5` | seconds between heartbeats, also each registry request's timeout; 1 to 60 |
 | `nmos.asset.manufacturer` | `danielclasen` | the BCP-002-02 manufacturer tag |
@@ -179,7 +179,7 @@ An output:
 | `flows` | `[<UUID>]`, the flow written |
 | `mergedFlow` | refused with one entry in `flows` |
 | `label` | the flow's label; the output's name when empty |
-| `group`, `role` | the flow's `urn:x-nmos:tag:grouphint/v1.0` tag `<group>:<role>`; default the output's name and `Audio`; no `:` |
+| `group`, `role` | the flow's `urn:x-nmos:tag:grouphint/v1.0` tag `<group>:<role>`; default the output's name and `Audio`; no `:`. With NMOS the Sender's grouphint takes `group` with the role `Audio out`, and no two outputs share a group |
 | `layout` | one label per output channel |
 | `preset` | a preset name, `select` or `shuffle`; or `matrix` instead |
 | `source` | with `shuffle`: per output channel the 0-based input channel |
@@ -188,7 +188,9 @@ An output:
 | `gainDb` | default `0` |
 
 An output reading an unconnected input is written silent. Flow ids are
-lowercase UUIDs; the nil UUID is reserved. An id names a flow within its domain: no flow is read by
+lowercase UUIDs; the nil UUID is reserved. With NMOS enabled, flow and
+domain ids are MXL UUIDs: a version digit of 1 to f and the variant 8 to
+b. An id names a flow within its domain: no flow is read by
 two inputs or both read and written in one domain, while the same id read
 in another domain is another flow. Every written id is unique across all
 domains, as the samplez engine requires of its outputs.
@@ -213,13 +215,17 @@ a test fails when it differs from the code.
 With `nmos.enabled`, foldz is one IS-04 v1.3 Node with one Device
 (BCP-002-02 function `Downmix`). Each output is a Source, Flow and Sender
 and each input a Receiver, all with transport `urn:x-nmos:transport:mxl`
-(AMWA BCP-007-03), grouped by BCP-002-01 grouphints `<name>:Audio out` and
-`<name>:Audio in`. Flows are `audio/float32` at 48 kHz. A Receiver's
-BCP-004-01 caps take exactly the input's channel count. The ids are UUIDv5
-of the seed and the input's or output's name.
+(AMWA BCP-007-03), grouped by BCP-002-01 grouphints: a Sender's is the
+output's `group` with the role `Audio out`, so it names the same group as
+the MXL flow's grouphint, whose role is the output's `role`; a Receiver's
+is `<input name>:Audio in`. Each output then needs a group of its own.
+Flows are `audio/float32` at 48 kHz. A Receiver's BCP-004-01 caps take
+exactly the input's channel count. The ids are UUIDv5 of the seed and the
+input's or output's name.
 
 foldz finds a registry at `nmos.registry.url`, else by unicast DNS-SD, else
-by multicast DNS-SD, heartbeats it, and deletes its Node from it on SIGTERM.
+by multicast DNS-SD, heartbeats it, and deletes its Node from it on SIGTERM
+before its flows go, waiting at most 5 s for the registry's answer.
 With no registry found it is not registered, and it does not advertise
 itself peer to peer.
 
@@ -229,8 +235,9 @@ foldz at start. A port's `mxl_domain_id` takes only its own domain.
 
 IS-05 v1.2, `/single` and `/bulk`:
 
-- A receiver's `mxl_flow_id` is any MXL UUID; a flow present in the domain
-  must match the caps, an absent one is accepted and read once it appears.
+- A receiver's `mxl_flow_id` is any MXL UUID but a flow one of foldz's
+  outputs writes in that domain; a flow present in the domain must match
+  the caps, an absent one is accepted and read once it appears.
   `master_enable: true` routes the input to the flow with the engine's fade;
   `false` detaches it, and its outputs read silence.
 - A sender's `mxl_flow_id` is the configured flow only. `master_enable:
@@ -244,7 +251,10 @@ IS-05 v1.2, `/single` and `/bulk`:
   apart.
 - An activation the engine refuses, or an output whose flow is not created
   within 5 s, turns the port's `master_enable` false in `/active`, counts in
-  `samplez_nmos_apply_failures_total` and shows in `/api/v1/status`.
+  `samplez_nmos_apply_failures_total` and shows in `/api/v1/status`; the
+  input is detached from the activation's index, or the output disabled.
+  A route the engine stamps later than asked is logged with the sample it
+  switches at.
 
 Not covered:
 

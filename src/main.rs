@@ -20,6 +20,11 @@ use samplez_service::{Ops, Service, ServiceConfig};
 /// samplez's capped default otherwise.
 const SERVICE_STACK: usize = 2 * 1024 * 1024;
 
+/// How long SIGTERM waits for the registry to answer the Node's DELETE,
+/// well inside a pod's default 30 s termination grace period, so the
+/// writers are released and their flows deleted before a SIGKILL.
+const UNREGISTER_WAIT: Duration = Duration::from_secs(5);
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let path = match args.as_slice() {
@@ -186,7 +191,6 @@ fn main() -> ExitCode {
     let serve_failed = Arc::new(AtomicBool::new(false));
     let failed = serve_failed.clone();
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let heartbeat = Duration::from_secs(config.nmos.heartbeat_s);
     let served = std::thread::Builder::new()
         .name("foldz-service".into())
         .stack_size(SERVICE_STACK)
@@ -207,7 +211,7 @@ fn main() -> ExitCode {
                 // Registration is dropped, so no POST lands after the
                 // DELETE.
                 if let Some(n) = &nmos
-                    && tokio::time::timeout(2 * heartbeat, n.unregister())
+                    && tokio::time::timeout(UNREGISTER_WAIT, n.unregister())
                         .await
                         .is_err()
                 {

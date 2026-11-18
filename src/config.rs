@@ -330,6 +330,13 @@ pub fn is_lowercase_uuid(s: &str) -> bool {
         })
 }
 
+/// Whether `s` is an MXL UUID: lowercase, with a version digit of 1 or
+/// above and the RFC 4122 variant, the pattern of AMWA BCP-007-03.
+pub fn is_mxl_uuid(s: &str) -> bool {
+    let b = s.as_bytes();
+    is_lowercase_uuid(s) && b[14] != b'0' && matches!(b[19], b'8' | b'9' | b'a' | b'b')
+}
+
 fn check_uuid(at: &str, id: &str) -> Result<(), ConfigError> {
     if id == UNCONNECTED_FLOW {
         err(at, "the nil UUID is reserved")
@@ -522,7 +529,52 @@ impl Config {
                 .map_err(named("output", &output.name))?;
             folds.push(folded);
         }
+        if self.nmos.enabled {
+            self.check_nmos_model()?;
+        }
         Ok(folds)
+    }
+
+    /// What the NMOS node model takes beyond the rest of the config: MXL
+    /// UUIDs (BCP-007-03) for every flow and domain id, and one Sender per
+    /// grouphint group.
+    fn check_nmos_model(&self) -> Result<(), ConfigError> {
+        let mxl = |at: String, id: &str| {
+            if is_mxl_uuid(id) {
+                Ok(())
+            } else {
+                err(
+                    at,
+                    format!(
+                        "{id} is not an MXL UUID (version digit 1 to f, variant 8 to b), which NMOS needs"
+                    ),
+                )
+            }
+        };
+        for (i, d) in self.domains.iter().enumerate() {
+            if let Some(id) = &d.id {
+                mxl(format!("domains[{i}].id"), id)?;
+            }
+        }
+        for (i, input) in self.inputs.iter().enumerate() {
+            if let Some(flow) = &input.flow {
+                mxl(format!("inputs[{i}].flow"), flow)?;
+            }
+        }
+        let mut groups = HashSet::new();
+        for (i, output) in self.outputs.iter().enumerate() {
+            mxl(format!("outputs[{i}].flows[0]"), &output.flows[0])?;
+            if !groups.insert(output.group()) {
+                return err(
+                    format!("outputs[{i}].group"),
+                    format!(
+                        "group {:?} is another output's; NMOS gives each group one Sender",
+                        output.group()
+                    ),
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Reads, parses and checks the config file at `path`, and returns it
@@ -804,17 +856,10 @@ impl Config {
             }
         }
         let registry = &nmos.registry;
-        // The registration client speaks plain HTTP and appends the API
-        // path itself.
-        let base = registry.url.strip_suffix('/').unwrap_or(&registry.url);
-        let plain = base
-            .strip_prefix("http://")
-            .is_some_and(|rest| !rest.contains('/'));
-        let url_ok = registry.url.is_empty() || plain && is_http_url(base);
-        if !url_ok {
+        if !registry.url.is_empty() && !is_http_url(&registry.url) {
             return err(
                 "nmos.registry.url",
-                format!("{:?} is not an http://host[:port] URL", registry.url),
+                format!("{:?} is not an http or https URL", registry.url),
             );
         }
         if !(1..=60).contains(&nmos.heartbeat_s) {
@@ -847,6 +892,21 @@ impl Config {
                 return err(
                     "listeners.nmos.tls",
                     "the Node advertises its APIs over plain HTTP",
+                );
+            }
+            // The registration client speaks plain HTTP and appends the
+            // API path itself.
+            let base = registry.url.strip_suffix('/').unwrap_or(&registry.url);
+            let plain = base
+                .strip_prefix("http://")
+                .is_some_and(|rest| !rest.contains('/'));
+            if !registry.url.is_empty() && !plain {
+                return err(
+                    "nmos.registry.url",
+                    format!(
+                        "{:?} is not an http://host[:port] URL, which NMOS needs",
+                        registry.url
+                    ),
                 );
             }
         }

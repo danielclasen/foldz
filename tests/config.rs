@@ -401,7 +401,7 @@ fn errors_name_the_item_they_concern() {
 fn registry_url_and_dns_sd_domain_are_checked() {
     for ok in [
         "http://registry:8010",
-        "http://registry.example.com",
+        "https://registry.example.com/x-nmos/registration/v1.3",
         "http://10.0.0.1:80",
         "http://[fd00::1]:8010/",
         "http://registry.10a:8010",
@@ -432,15 +432,32 @@ fn registry_url_and_dns_sd_domain_are_checked() {
         "http://0x7f.0.0.1:8010",
         "http://registry.0x1F",
         "http://registry.0x",
-        // The registration client speaks plain HTTP and appends the API
-        // path.
+    ] {
+        let mut v = base();
+        v["nmos"] = json!({ "registry": { "url": bad } });
+        assert_invalid(v, "nmos.registry.url", "not an http or https URL");
+    }
+    // With NMOS enabled, the registration client speaks plain HTTP and
+    // appends the API path itself.
+    let enabled = |url: &str| {
+        let mut v = base();
+        v["nmos"] = json!({ "enabled": true, "seedName": "x", "advertiseHost": "h",
+                            "registry": { "url": url } });
+        v
+    };
+    for ok in [
+        "http://registry:8010",
+        "http://registry.example.com/",
+        "http://[fd00::1]:8010",
+    ] {
+        parse(enabled(ok)).unwrap().validate().unwrap();
+    }
+    for bad in [
         "https://registry.example.com",
         "http://registry.example.com/x-nmos/registration/v1.3",
         "http://registry//",
     ] {
-        let mut v = base();
-        v["nmos"] = json!({ "registry": { "url": bad } });
-        assert_invalid(v, "nmos.registry.url", "not an http://host[:port] URL");
+        assert_invalid(enabled(bad), "nmos.registry.url", "http://host[:port]");
     }
     for bad in ["exa mple.com", "-a.com", "a..com", ".", &"a".repeat(64)] {
         let mut v = base();
@@ -552,6 +569,53 @@ fn nmos_settings_are_checked() {
     v["listeners"] = json!({ "nmos": { "bind": "0.0.0.0", "port": 8081,
                                        "tls": { "mode": "selfSigned", "sans": ["h"] } } });
     assert_invalid(v, "listeners.nmos.tls", "plain HTTP");
+}
+
+#[test]
+fn nmos_takes_mxl_uuids_and_one_sender_per_group() {
+    let enabled = || {
+        let mut v = base();
+        v["nmos"] = json!({ "enabled": true, "seedName": "x", "advertiseHost": "h" });
+        v
+    };
+    parse(enabled()).unwrap().validate().unwrap();
+    // A version digit of 0, and the variant 0 to 7: lowercase UUIDs, but
+    // no MXL ids.
+    let v0 = "0f3a6c2e-5b1d-0e8a-9c7f-2d4b6a8e0c11";
+    let variant = "0f3a6c2e-5b1d-4e8a-7c7f-2d4b6a8e0c11";
+    for (at, path, id) in [
+        (
+            "outputs[0].flows[0]",
+            &["outputs", "0", "flows", "0"][..],
+            v0,
+        ),
+        ("inputs[0].flow", &["inputs", "0", "flow"][..], variant),
+        ("domains[0].id", &["domains", "0", "id"][..], v0),
+    ] {
+        let mut v = enabled();
+        let mut node = &mut v;
+        for key in path {
+            node = match key.parse::<usize>() {
+                Ok(i) => &mut node[i],
+                Err(_) => &mut node[*key],
+            };
+        }
+        *node = json!(id);
+        assert_invalid(v.clone(), at, "not an MXL UUID");
+        // Without NMOS they are lowercase UUIDs like any other.
+        v["nmos"]["enabled"] = json!(false);
+        parse(v).unwrap().validate().unwrap();
+    }
+
+    let mut v = enabled();
+    let mut second = v["outputs"][0].clone();
+    second["name"] = json!("other");
+    second["flows"] = json!([OUT_B]);
+    second["group"] = json!("stereo");
+    v["outputs"] = json!([v["outputs"][0].clone(), second]);
+    assert_invalid(v.clone(), "outputs[1].group", "one Sender");
+    v["nmos"]["enabled"] = json!(false);
+    parse(v).unwrap().validate().unwrap();
 }
 
 #[test]

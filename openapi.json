@@ -488,6 +488,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "enabled": {
+            "description": "Whether the output is to be written; an IS-05 sender activation\nsets it.",
+            "type": "boolean"
+          },
           "maxCommitBatchSizeHint": {
             "description": "The effective `maxCommitBatchSizeHint` and `maxSyncBatchSizeHint`.",
             "format": "int32",
@@ -528,6 +532,7 @@
         },
         "required": [
           "name",
+          "enabled",
           "realised",
           "attempts",
           "races",

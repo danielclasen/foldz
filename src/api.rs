@@ -293,6 +293,9 @@ pub struct InputCounters {
 #[serde(rename_all = "camelCase")]
 pub struct OutputStatus {
     pub name: String,
+    /// Whether the output is to be written; an IS-05 sender activation
+    /// sets it.
+    pub enabled: bool,
     /// Whether the output's flow is created and written.
     pub realised: bool,
     /// Why it is not.
@@ -452,6 +455,7 @@ impl Status {
             .iter()
             .map(|o| OutputStatus {
                 name: o.name.clone(),
+                enabled: o.enabled,
                 realised: o.realised,
                 reason: o.reason.clone(),
                 attempts: o.attempts,

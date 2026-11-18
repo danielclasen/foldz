@@ -55,6 +55,14 @@ fn a_domain_id_comes_from_domain_def_json_or_the_config() {
     std::fs::write(bad.join("domain_def.json"), r#"{"id": "NOT-A-UUID"}"#).unwrap();
     let e = domain_ids(&[domain(&bad, Some(DOMAIN))]).unwrap_err();
     assert!(e.at.ends_with("domain_def.json"), "{e}");
+    // A lowercase UUID, but version 0: no MXL id.
+    std::fs::write(
+        bad.join("domain_def.json"),
+        r#"{"id": "5e0c2a1b-7d3f-0e9a-8b6c-1f2e3d4c5b6a"}"#,
+    )
+    .unwrap();
+    let e = domain_ids(&[domain(&bad, None)]).unwrap_err();
+    assert!(e.reason.contains("MXL UUID"), "{e}");
 }
 
 #[test]
@@ -113,8 +121,12 @@ fn config() -> Config {
         ],
         "outputs": [
             { "name": "stereo", "input": "main", "domain": "a", "label": "Programme",
+              "group": "pgm", "role": "Stereo",
               "flows": ["0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11"], "layout": ["L", "R"],
-              "preset": "bs775-3_2-to-2_0" }
+              "preset": "bs775-3_2-to-2_0" },
+            { "name": "mono", "input": "spare", "domain": "a",
+              "flows": ["0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c12"], "layout": ["C"],
+              "matrix": [[0.5, 0.5]] }
         ]
     }))
     .unwrap()
@@ -128,10 +140,12 @@ fn every_input_is_a_receiver_and_every_output_a_sender() {
     let b: samplez_nmos::uuid::Uuid = OTHER.parse().unwrap();
     let m = model(&config, &[a, b]);
 
-    assert_eq!(m.senders.len(), 1);
+    assert_eq!(m.senders.len(), 2);
     let s = &m.senders[0];
     assert_eq!((s.key.as_str(), s.label.as_str()), ("stereo", "Programme"));
-    assert_eq!(s.group, "stereo");
+    // The group of the MXL flow's grouphint, pgm:Stereo.
+    assert_eq!(s.group, "pgm");
+    assert_eq!(m.senders[1].group, "mono");
     assert_eq!(s.domain, a);
     assert_eq!(s.flow.to_string(), "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11");
     let symbols: Vec<_> = s.channels.iter().map(|c| c.symbol.as_deref()).collect();
@@ -162,4 +176,26 @@ fn every_input_is_a_receiver_and_every_output_a_sender() {
     assert_eq!(c.registries, ["http://registry:8010"]);
     assert_eq!(c.dns_sd_domain, None);
     assert_eq!(c.heartbeat, std::time::Duration::from_secs(5));
+}
+
+/// The engine refuses to route an input to a flow an output writes in
+/// its domain; resolve refuses it at staging, with a 400.
+#[test]
+fn an_input_may_not_read_an_output_of_its_own_domain() {
+    let config = config();
+    config.validate().unwrap();
+    assert_eq!(foldz::nmos::written_in_domain(&config, 0), []);
+    assert_eq!(
+        foldz::nmos::written_in_domain(&config, 1),
+        [
+            (
+                "stereo".to_owned(),
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11".to_owned()
+            ),
+            (
+                "mono".to_owned(),
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c12".to_owned()
+            )
+        ]
+    );
 }

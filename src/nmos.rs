@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use samplez::Engine;
+use samplez::{Engine, EntryError};
 use samplez_mxl::{Instance, MxlApi};
 use samplez_nmos::uuid::Uuid;
 use samplez_nmos::{
@@ -17,7 +17,7 @@ use samplez_nmos::{
 use serde_json::Value;
 
 use crate::api::EngineSlot;
-use crate::config::{Config, ConfigError, Domain, is_lowercase_uuid};
+use crate::config::{Config, ConfigError, Domain, is_mxl_uuid};
 use crate::layout::{Label, Layout};
 
 /// How long an enabled output's writer may take to come in before the
@@ -49,7 +49,7 @@ pub fn domain_ids(domains: &[Domain]) -> Result<Vec<Uuid>, ConfigError> {
             let from_file = match std::fs::read_to_string(&file) {
                 Ok(text) => match def_id(&text) {
                     Some(id) => Some(id),
-                    None => return err(&shown, "has no lowercase UUID \"id\""),
+                    None => return err(&shown, "has no MXL UUID \"id\""),
                 },
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
                 Err(e) => return err(&shown, e.to_string()),
@@ -79,7 +79,7 @@ pub fn domain_ids(domains: &[Domain]) -> Result<Vec<Uuid>, ConfigError> {
 fn def_id(text: &str) -> Option<String> {
     let v: Value = serde_json::from_str(text).ok()?;
     let id = v.get("id")?.as_str()?;
-    is_lowercase_uuid(id).then(|| id.to_owned())
+    is_mxl_uuid(id).then(|| id.to_owned())
 }
 
 /// The index of each item's domain among `config.domains`.
@@ -115,8 +115,10 @@ fn flow_uuid(id: &str) -> Uuid {
     id.parse().expect("validate checked the flow id")
 }
 
-/// One Sender per output and one Receiver per input, keyed and grouped by
-/// name; inputs and outputs share no name.
+/// One Sender per output and one Receiver per input, keyed by name. A
+/// Sender's grouphint group is the output's `group`, the group of its MXL
+/// flow's grouphint; a Receiver's is the input's name. The role is
+/// samplez-nmos's per resource kind, `Audio out` and `Audio in`.
 pub fn model(config: &Config, domains: &[Uuid]) -> NodeModel {
     let senders = config
         .outputs
@@ -125,7 +127,7 @@ pub fn model(config: &Config, domains: &[Uuid]) -> NodeModel {
             key: o.name.clone(),
             label: o.label().to_owned(),
             channels: channels(&o.layout),
-            group: o.name.clone(),
+            group: o.group().to_owned(),
             domain: domains[domain_index(config, o.domain.as_deref())],
             flow: flow_uuid(&o.flows[0]),
         })
@@ -195,11 +197,15 @@ pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, String> {
         .iter()
         .map(|i| instances[domain_index(config, i.domain.as_deref())].clone())
         .collect();
+    let written = (0..config.inputs.len())
+        .map(|i| written_in_domain(config, i))
+        .collect();
     let ports = EnginePorts {
         engine,
         api,
         block: u64::from(config.engine.block_size),
         inputs,
+        written,
     };
     Nmos::new(
         model(config, &ids),
@@ -209,6 +215,18 @@ pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, String> {
         SystemTai,
     )
     .map_err(|e| e.to_string())
+}
+
+/// Each output writing to input `input`'s domain, by name, and the flow it
+/// writes: flows the engine refuses to route that input to.
+pub fn written_in_domain(config: &Config, input: usize) -> Vec<(String, String)> {
+    let domain = domain_index(config, config.inputs[input].domain.as_deref());
+    config
+        .outputs
+        .iter()
+        .filter(|o| domain_index(config, o.domain.as_deref()) == domain)
+        .map(|o| (o.name.clone(), o.flows[0].clone()))
+        .collect()
 }
 
 /// What `domain` holds under `flow`, read from its flow definition.
@@ -249,6 +267,62 @@ pub fn parse_flow_def(def: &str) -> Option<FlowSeen> {
     })
 }
 
+/// The engine calls a receiver activation makes, so the tests can stand
+/// in for an engine that refuses one.
+pub trait Slots {
+    fn route(&self, slot: usize, flow: &str, at_index: u64) -> Result<u64, EntryError>;
+    fn detach(&self, slot: usize, at_index: u64) -> Result<u64, EntryError>;
+}
+
+impl Slots for Engine {
+    fn route(&self, slot: usize, flow: &str, at_index: u64) -> Result<u64, EntryError> {
+        Engine::route(self, slot, flow, at_index)
+    }
+
+    fn detach(&self, slot: usize, at_index: u64) -> Result<u64, EntryError> {
+        Engine::detach(self, slot, at_index)
+    }
+}
+
+/// Routes input `slot` to `active`'s flow, or detaches it, at `at_index`
+/// (0: the earliest index). A route the engine refuses detaches the slot
+/// at that index instead: samplez-nmos then turns the receiver's
+/// `master_enable` false in `/active`, and the slot reads nothing either.
+pub fn apply_receiver(
+    engine: &impl Slots,
+    slot: usize,
+    active: &Active,
+    at_index: u64,
+) -> Result<(), Fail> {
+    let applied = match (active.master_enable, active.flow) {
+        (true, Some(flow)) => engine.route(slot, &flow.to_string(), at_index),
+        _ => engine.detach(slot, at_index),
+    };
+    match applied {
+        Ok(stamped) => {
+            // The engine builds one generation at a time, so a switch can
+            // land later than asked.
+            if at_index > 0 && stamped > at_index {
+                eprintln!(
+                    "foldz: nmos: input slot {slot} switches at sample {stamped}, {} samples \
+                     after the requested {at_index}",
+                    stamped - at_index
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if let Err(d) = engine.detach(slot, at_index) {
+                eprintln!(
+                    "foldz: nmos: input slot {slot}: the engine refused the detach after a \
+                     refused activation, so it keeps its last flow: {d}"
+                );
+            }
+            Err(Fail(e.to_string()))
+        }
+    }
+}
+
 /// The IS-05 hooks on a running engine.
 struct EnginePorts {
     engine: EngineSlot,
@@ -256,6 +330,8 @@ struct EnginePorts {
     block: u64,
     /// Each input's domain instance, in input order.
     inputs: Vec<Arc<Instance>>,
+    /// Per input, [`written_in_domain`].
+    written: Vec<Vec<(String, String)>>,
 }
 
 impl EnginePorts {
@@ -271,19 +347,6 @@ impl EnginePorts {
     fn index(&self, at: Tai) -> u64 {
         let ns = u64::try_from(at.as_nanos()).unwrap_or(u64::MAX);
         samplez_mxl::time::timestamp_to_index(&self.api, ns).next_multiple_of(self.block)
-    }
-
-    fn apply_receiver(&self, slot: usize, active: &Active, at_index: u64) -> Result<(), Fail> {
-        let applied = self.with_engine(|e| match (active.master_enable, active.flow) {
-            (true, Some(flow)) => e.route(slot, &flow.to_string(), at_index),
-            _ => e.detach(slot, at_index),
-        })?;
-        applied.map(drop).map_err(|e| {
-            // samplez-nmos turns the receiver's master_enable false in
-            // /active, so the slot reads nothing either.
-            let _ = self.with_engine(|en| en.detach(slot, 0));
-            Fail(e.to_string())
-        })
     }
 
     async fn apply_sender(&self, output: usize, enabled: bool, at_index: u64) -> Result<(), Fail> {
@@ -306,7 +369,12 @@ impl EnginePorts {
             if Instant::now() >= deadline {
                 // samplez-nmos turns the sender's master_enable false in
                 // /active, so the output stops trying too.
-                let _ = self.with_engine(|e| e.set_output_enabled(output, false, 0));
+                if let Err(e) = self.with_engine(|e| e.set_output_enabled(output, false, 0))? {
+                    eprintln!(
+                        "foldz: nmos: output {output}: the engine refused the disable after a \
+                         failed activation, so it keeps trying to create its flow: {e}"
+                    );
+                }
                 return Err(Fail(format!(
                     "the output's flow was not created within {} s: {}",
                     CREATE_TIMEOUT.as_secs(),
@@ -320,11 +388,22 @@ impl EnginePorts {
 
 impl Connections for EnginePorts {
     fn resolve(&self, port: Port, flow: Uuid) -> BoxFuture<'_, Result<FlowSeen, Reject>> {
-        let seen = match port {
-            Port::Receiver(i) => flow_seen(&self.inputs[i], &flow.to_string()),
-            Port::Sender(_) => Ok(FlowSeen::Absent),
+        let Port::Receiver(i) = port else {
+            return Box::pin(async { Ok(FlowSeen::Absent) });
         };
-        Box::pin(async move { seen })
+        let flow = flow.to_string();
+        if let Some((name, _)) = self.written[i].iter().find(|(_, f)| *f == flow) {
+            let why = format!("flow {flow} is written by output {name} in this input's domain");
+            return Box::pin(async move { Err(Reject(why)) });
+        }
+        let instance = self.inputs[i].clone();
+        // libmxl reads the flow's files: off the runtime that serves the
+        // Node API and the heartbeats.
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || flow_seen(&instance, &flow))
+                .await
+                .unwrap_or_else(|e| Err(Reject(format!("reading the flow definition: {e}"))))
+        })
     }
 
     /// The engine's buildLead: a route stamped later than that from now
@@ -349,9 +428,87 @@ impl Connections for EnginePorts {
         Box::pin(async move {
             let at_index = at.map_or(0, |t| self.index(t));
             match port {
-                Port::Receiver(i) => self.apply_receiver(i, &active, at_index),
+                Port::Receiver(i) => {
+                    self.with_engine(|e| apply_receiver(e, i, &active, at_index))?
+                }
                 Port::Sender(o) => self.apply_sender(o, active.master_enable, at_index).await,
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    /// Refuses routes when `refuse` is set and records every call.
+    struct Stub {
+        refuse: bool,
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl Slots for Stub {
+        fn route(&self, slot: usize, flow: &str, at_index: u64) -> Result<u64, EntryError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("route {slot} {flow} {at_index}"));
+            if self.refuse {
+                Err(EntryError::Full)
+            } else {
+                Ok(at_index)
+            }
+        }
+
+        fn detach(&self, slot: usize, at_index: u64) -> Result<u64, EntryError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("detach {slot} {at_index}"));
+            Ok(at_index)
+        }
+    }
+
+    const FLOW: &str = "0d7f6b8e-4a2c-4e8f-9b1a-2c3d4e5f6a03";
+
+    fn active(master_enable: bool) -> Active {
+        Active {
+            master_enable,
+            peer: None,
+            domain: None,
+            flow: Some(FLOW.parse().unwrap()),
+        }
+    }
+
+    #[test]
+    fn an_enabled_receiver_routes_and_a_disabled_one_detaches() {
+        let stub = Stub {
+            refuse: false,
+            calls: Mutex::new(Vec::new()),
+        };
+        apply_receiver(&stub, 1, &active(true), 960).unwrap();
+        apply_receiver(&stub, 1, &active(false), 0).unwrap();
+        assert_eq!(
+            *stub.calls.lock().unwrap(),
+            [format!("route 1 {FLOW} 960"), "detach 1 0".to_owned()]
+        );
+    }
+
+    /// /active turns master_enable false on a failed apply, so the slot
+    /// must stop reading too, from the activation's index.
+    #[test]
+    fn a_refused_route_detaches_the_slot_at_the_activation_index() {
+        let stub = Stub {
+            refuse: true,
+            calls: Mutex::new(Vec::new()),
+        };
+        let e = apply_receiver(&stub, 2, &active(true), 4800).unwrap_err();
+        assert!(e.0.contains("outstanding"), "{e}");
+        assert_eq!(
+            *stub.calls.lock().unwrap(),
+            [format!("route 2 {FLOW} 4800"), "detach 2 4800".to_owned()]
+        );
     }
 }
