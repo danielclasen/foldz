@@ -10,6 +10,15 @@
 //! against hard-coded values. The ops and API listeners answer, and
 //! SIGTERM deletes the output flows.
 //!
+//! A second run takes IS-05 activations on the NMOS listener: a receiver
+//! connected to an absent flow reads it once it appears, disconnected it
+//! reads silence, and a scheduled activation fades the flow in from the
+//! requested sample, rounded up to a block; a receiver staged onto foldz's
+//! own output flow is refused; a disabled sender's flow is gone and is
+//! back once enabled; a sender whose flow another writer holds fails and
+//! stays disabled; on SIGTERM the node leaves a registry before its flows
+//! go; the resource ids survive a restart.
+//!
 //! Runs without the test harness. With `SAMPLEZ_REQUIRE_RT=1` the RT
 //! thread must run SCHED_FIFO and the process memory must be locked.
 
@@ -49,6 +58,12 @@ fn main() {
     downmix();
     println!(
         "test downmix_outputs_are_bit_exact_against_the_fold_matrices ... ok ({:.1} s)",
+        t.elapsed().as_secs_f64()
+    );
+    let t = Instant::now();
+    nmos();
+    println!(
+        "test is05_activations_route_detach_and_release_at_their_index ... ok ({:.1} s)",
         t.elapsed().as_secs_f64()
     );
 }
@@ -99,9 +114,11 @@ impl Drop for Domain {
     }
 }
 
+/// A random version 4 UUID, which BCP-007-03's MXL id pattern admits.
 fn new_id() -> String {
     let r = RandomState::new();
     let x = (u128::from(r.hash_one(1u8)) << 64) | u128::from(r.hash_one(2u8));
+    let x = (x & !(0xf << 76) & !(0x3 << 62)) | (0x4 << 76) | (0x2 << 62);
     let h = format!("{x:032x}");
     format!(
         "{}-{}-{}-{}-{}",
@@ -143,6 +160,7 @@ impl Pilot {
             role: "Audio",
             channels,
             block: B,
+            batch: B,
         };
         let Creation::Created { mut writer, .. } = output::create(&instance, &cfg).unwrap() else {
             panic!("pilot flow {id} not created");
@@ -193,6 +211,7 @@ struct Foldz {
     child: Child,
     api: SocketAddr,
     ops: SocketAddr,
+    nmos: SocketAddr,
 }
 
 impl Foldz {
@@ -219,7 +238,13 @@ impl Foldz {
         };
         let api = addr(&rx, "api");
         let ops = addr(&rx, "ops");
-        Foldz { child, api, ops }
+        let nmos = addr(&rx, "nmos");
+        Foldz {
+            child,
+            api,
+            ops,
+            nmos,
+        }
     }
 
     /// Sends SIGTERM and returns whether the process exited with success.
@@ -243,11 +268,19 @@ impl Drop for Foldz {
 /// A plain HTTP/1.1 GET: the status code and the body as JSON, or as a
 /// string when it is not JSON.
 fn get(addr: SocketAddr, path: &str) -> (u16, Value) {
+    request(addr, "GET", path, None)
+}
+
+/// A plain HTTP/1.1 request with an optional JSON body.
+fn request(addr: SocketAddr, method: &str, path: &str, body: Option<&Value>) -> (u16, Value) {
     let mut s = TcpStream::connect(addr).unwrap();
     s.set_read_timeout(Some(5 * SECOND)).unwrap();
+    let body = body.map(Value::to_string).unwrap_or_default();
     write!(
         s,
-        "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
     )
     .unwrap();
     let mut text = String::new();
@@ -279,12 +312,14 @@ impl Reader {
         let cfg = InputConfig {
             flow_id,
             channels: channels as u32,
+            flow_channels: None,
             offset: 0,
         };
         let timing = Timing {
             block: B,
             margin: 0,
             max_catchup_blocks: 0,
+            resync_budget: 0,
         };
         generation.attach(0, &cfg, &timing).unwrap();
         Reader {
@@ -661,4 +696,424 @@ fn downmix() {
             "the released writer deletes flow {id}"
         );
     }
+}
+
+/// A TCP port free on 127.0.0.1 a moment ago: the NMOS listener's port has
+/// to be known before foldz starts, to advertise it.
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+/// The id of the one resource of `kind` (`senders`, `receivers`) labelled
+/// `label`.
+fn resource_id(foldz: &Foldz, kind: &str, label: &str) -> String {
+    let (code, list) = get(foldz.nmos, &format!("/x-nmos/node/v1.3/{kind}/"));
+    assert_eq!(code, 200, "{list}");
+    let found: Vec<_> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["label"] == label)
+        .collect();
+    assert_eq!(found.len(), 1, "{list}");
+    found[0]["id"].as_str().unwrap().to_owned()
+}
+
+/// PATCHes `staged` of `/single/<kind>/<id>` and returns the response.
+fn stage(foldz: &Foldz, kind: &str, id: &str, staged: Value) -> Value {
+    let path = format!("/x-nmos/connection/v1.2/single/{kind}/{id}/staged");
+    let (code, body) = request(foldz.nmos, "PATCH", &path, Some(&staged));
+    assert!(code == 200 || code == 202, "{code} {body}");
+    body
+}
+
+fn input_status(foldz: &Foldz) -> Value {
+    let (code, status) = get(foldz.api, "/api/v1/status");
+    assert_eq!(code, 200, "{status}");
+    status["inputs"][0].clone()
+}
+
+fn immediate() -> Value {
+    json!({ "mode": "activate_immediate" })
+}
+
+/// One request a [`Registry`] took: method, path, and whether the
+/// watched flow was in the domain when it arrived.
+#[derive(Debug, Clone)]
+struct Seen {
+    method: String,
+    path: String,
+    flow_present: bool,
+}
+
+/// A Registration API that accepts every registration, heartbeat and
+/// delete and records each request.
+struct Registry {
+    addr: SocketAddr,
+    seen: Arc<std::sync::Mutex<Vec<Seen>>>,
+}
+
+impl Registry {
+    /// Watches `flow_file` for [`Seen::flow_present`].
+    fn start(flow_file: PathBuf) -> Registry {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let log = Arc::clone(&log);
+                let flow_file = flow_file.clone();
+                std::thread::spawn(move || Registry::serve(stream, &flow_file, &log));
+            }
+        });
+        Registry { addr, seen }
+    }
+
+    fn serve(stream: TcpStream, flow_file: &Path, log: &std::sync::Mutex<Vec<Seen>>) {
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            return;
+        }
+        let mut parts = line.split_whitespace();
+        let (method, path) = (
+            parts.next().unwrap_or("").to_owned(),
+            parts.next().unwrap_or("").to_owned(),
+        );
+        let mut length = 0;
+        loop {
+            let mut header = String::new();
+            if reader.read_line(&mut header).unwrap_or(0) == 0 || header == "\r\n" {
+                break;
+            }
+            if let Some((name, value)) = header.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                length = value.trim().parse().unwrap_or(0);
+            }
+        }
+        let mut body = vec![0; length];
+        let _ = reader.read_exact(&mut body);
+        log.lock().unwrap().push(Seen {
+            method: method.clone(),
+            path: path.clone(),
+            flow_present: flow_file.exists(),
+        });
+        let status = match method.as_str() {
+            "POST" if path.ends_with("/resource") => "201 Created",
+            "DELETE" => "204 No Content",
+            _ => "200 OK",
+        };
+        let body = if status.starts_with("204") { "" } else { "{}" };
+        let mut stream = reader.into_inner();
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+             Connection: close\r\n\r\n{body}",
+            body.len()
+        );
+    }
+
+    fn seen(&self) -> Vec<Seen> {
+        self.seen.lock().unwrap().clone()
+    }
+}
+
+/// The NMOS port of kind `kind` in `/api/v1/status`.
+fn nmos_port(foldz: &Foldz, kind: &str) -> Value {
+    let (code, status) = get(foldz.api, "/api/v1/status");
+    assert_eq!(code, 200, "{status}");
+    status["nmos"]["ports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["kind"] == kind)
+        .unwrap()
+        .clone()
+}
+
+fn nmos() {
+    let domain = Domain::new();
+    let domain_id = new_id();
+    std::fs::write(
+        domain.0.join("domain_def.json"),
+        json!({ "id": domain_id, "label": "e2e", "description": "", "tags": {} }).to_string(),
+    )
+    .unwrap();
+    let (src, out) = (new_id(), new_id());
+    let registry = Registry::start(domain.0.join(format!("{out}.mxl-flow")));
+    let config = json!({
+        "mxl": { "libraryPath": libmxl() },
+        "engine": { "readerMarginSamples": MARGIN, "rampSamples": RAMP },
+        "rt": { "rtCpu": "none" },
+        "listeners": {
+            "api": { "bind": "127.0.0.1", "port": 0 },
+            "ops": { "bind": "127.0.0.1", "port": 0 },
+            "nmos": { "bind": "127.0.0.1", "port": free_port() }
+        },
+        "nmos": { "enabled": true, "seedName": "e2e", "advertiseHost": "127.0.0.1",
+                  "registry": { "url": format!("http://{}", registry.addr) } },
+        "domains": [{ "name": "d", "path": domain.0 }],
+        "inputs": [{ "name": "main", "channels": 2, "layout": ["L", "R"] }],
+        "outputs": [{ "name": "out", "flows": [out], "layout": ["L", "R"], "preset": "select" }]
+    });
+    let file = domain.0.join("foldz.json");
+    std::fs::write(&file, config.to_string()).unwrap();
+
+    let foldz = Foldz::start(&file);
+    wait_for(10 * SECOND, "the output flow", || domain.has_flow(&out));
+    let receiver = resource_id(&foldz, "receivers", "main");
+    let sender = resource_id(&foldz, "senders", "out");
+    let node = get(foldz.nmos, "/x-nmos/node/v1.3/self").1["id"].clone();
+    assert_eq!(input_status(&foldz)["state"], "unconnected");
+
+    // Connected to a flow nobody writes yet: accepted, read once it is.
+    let connect = |activation: Value| {
+        json!({
+            "master_enable": true,
+            "transport_params": [{ "mxl_flow_id": src, "mxl_domain_id": domain_id }],
+            "activation": activation,
+        })
+    };
+    stage(&foldz, "receivers", &receiver, connect(immediate()));
+    wait_for(10 * SECOND, "the input on the absent flow", || {
+        input_status(&foldz)["flow"] == src.as_str()
+    });
+    let _pilot = Pilot::start(&domain.0, &src, 2);
+
+    let api = api();
+    let now_k = || time::timestamp_to_index(&api, time::now(&api)) / B;
+    // Blocks committed for at least 100 ms.
+    let committed = || now_k() - (MARGIN + 4800) / B;
+    // A reader reads ascending only, so each read takes a new one.
+    let read = |ks: std::ops::Range<u64>| Reader::new(&domain.0, &out, 2).read(ks);
+    let b = B as usize;
+    let is_pilot = |k: u64, block: &[f32]| {
+        (0..2).all(|ch| (0..b).all(|n| block[ch * b + n] == pilot(ch, k * B + n as u64)))
+    };
+    let is_silent = |block: &[f32]| block.iter().all(|v| v.to_bits() == 0);
+    wait_for(10 * SECOND, "the pilot at the output", || {
+        let k = committed();
+        is_pilot(k, &read(k..k + 1))
+    });
+
+    // Disconnected: silence, and the input reads nothing.
+    stage(
+        &foldz,
+        "receivers",
+        &receiver,
+        json!({ "master_enable": false, "activation": immediate() }),
+    );
+    wait_for(10 * SECOND, "the input unconnected", || {
+        input_status(&foldz)["state"] == "unconnected"
+    });
+    wait_for(10 * SECOND, "silence at the output", || {
+        let k = committed();
+        read(k - 50..k).chunks_exact(2 * b).all(is_silent)
+    });
+
+    // foldz's own output flow in the input's domain: the engine would
+    // refuse the route, so staging it is refused.
+    let path = format!("/x-nmos/connection/v1.2/single/receivers/{receiver}/staged");
+    let own = json!({
+        "master_enable": true,
+        "transport_params": [{ "mxl_flow_id": out, "mxl_domain_id": domain_id }],
+        "activation": immediate(),
+    });
+    let (code, body) = request(foldz.nmos, "PATCH", &path, Some(&own));
+    assert_eq!(code, 400, "{body}");
+    assert!(body.to_string().contains("written by output out"), "{body}");
+    assert_eq!(nmos_port(&foldz, "receiver")["masterEnable"], false);
+    assert_eq!(nmos_port(&foldz, "receiver")["failures"], 0);
+
+    // Scheduled 1 s ahead: silence up to the requested sample rounded up
+    // to a block, the fade from there, the pilot once the ramp is over.
+    let at = time::now(&api) + 1_000_000_000;
+    let requested = format!("{}:{}", at / 1_000_000_000, at % 1_000_000_000);
+    stage(
+        &foldz,
+        "receivers",
+        &receiver,
+        connect(json!({ "mode": "activate_scheduled_absolute", "requested_time": requested })),
+    );
+    let index = time::timestamp_to_index(&api, at).next_multiple_of(B);
+    let first = index / B;
+    let last = (index + u64::from(RAMP)).div_ceil(B) + 10;
+    wait_for(10 * SECOND, "the scheduled activation's blocks", || {
+        committed() > last
+    });
+    let blocks = read(first - 10..last);
+    let (code, active) = get(
+        foldz.nmos,
+        &format!("/x-nmos/connection/v1.2/single/receivers/{receiver}/active"),
+    );
+    assert_eq!(code, 200, "{active}");
+    assert_eq!(active["activation"]["activation_time"], requested.as_str());
+    assert_eq!(active["transport_params"][0]["mxl_flow_id"], src.as_str());
+    for (i, block) in blocks.chunks_exact(2 * b).enumerate() {
+        let k = first - 10 + i as u64;
+        for ch in 0..2 {
+            for n in 0..b {
+                let idx = k * B + n as u64;
+                let (got, want) = (block[ch * b + n], pilot(ch, idx));
+                if idx < index {
+                    assert_eq!(got.to_bits(), 0, "channel {ch} at {idx}, switch at {index}");
+                } else if idx < index + u64::from(RAMP) {
+                    assert!(
+                        got.abs() <= want.abs(),
+                        "channel {ch} at {idx}: {got} {want}"
+                    );
+                    if idx > index {
+                        assert_eq!(got == 0.0, want == 0.0, "channel {ch} at {idx}: {got}");
+                    }
+                } else {
+                    assert_eq!(got, want, "channel {ch} at {idx}, switch at {index}");
+                }
+            }
+        }
+    }
+
+    // A disabled sender's flow is gone; enabled, it is back.
+    stage(
+        &foldz,
+        "senders",
+        &sender,
+        json!({ "master_enable": false, "activation": immediate() }),
+    );
+    wait_for(10 * SECOND, "the output flow released", || {
+        !domain.has_flow(&out)
+    });
+    stage(
+        &foldz,
+        "senders",
+        &sender,
+        json!({ "master_enable": true, "activation": immediate() }),
+    );
+    wait_for(10 * SECOND, "the output flow recreated", || {
+        domain.has_flow(&out)
+    });
+    wait_for(10 * SECOND, "the sender's activation applied", || {
+        let (_, status) = get(foldz.api, "/api/v1/status");
+        let ports = status["nmos"]["ports"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        ports.iter().any(|p| {
+            p["kind"] == "sender" && p["applied"] == "applied" && p["masterEnable"] == true
+        })
+    });
+    let (_, status) = get(foldz.api, "/api/v1/status");
+    for p in status["nmos"]["ports"].as_array().unwrap() {
+        assert_eq!(p["failures"], 0, "{p}");
+    }
+
+    // Another writer holds the output's flow when the sender is enabled:
+    // the activation fails after 5 s, /active turns master_enable false
+    // and the engine stops trying to create the flow.
+    stage(
+        &foldz,
+        "senders",
+        &sender,
+        json!({ "master_enable": false, "activation": immediate() }),
+    );
+    wait_for(10 * SECOND, "the output flow released again", || {
+        !domain.has_flow(&out)
+    });
+    let foreign = Pilot::start(&domain.0, &out, 2);
+    stage(
+        &foldz,
+        "senders",
+        &sender,
+        json!({ "master_enable": true, "activation": immediate() }),
+    );
+    wait_for(15 * SECOND, "the sender's activation failed", || {
+        nmos_port(&foldz, "sender")["applied"] == "failed"
+    });
+    let port = nmos_port(&foldz, "sender");
+    assert_eq!(port["masterEnable"], false, "{port}");
+    assert_eq!(port["failures"], 1, "{port}");
+    assert!(
+        port["error"].as_str().unwrap().contains("not created"),
+        "{port}"
+    );
+    let (_, active) = get(
+        foldz.nmos,
+        &format!("/x-nmos/connection/v1.2/single/senders/{sender}/active"),
+    );
+    assert_eq!(active["master_enable"], false, "{active}");
+    // The engine applies the disable at the earliest index it stamps.
+    wait_for(2 * SECOND, "the output disabled in the engine", || {
+        get(foldz.api, "/api/v1/status").1["outputs"][0]["enabled"] == false
+    });
+    // The exporter samples the failure counts every 100 ms.
+    wait_for(2 * SECOND, "the apply failure on /metrics", || {
+        let (_, metrics) = get(foldz.ops, "/metrics");
+        metrics
+            .as_str()
+            .unwrap()
+            .contains(r#"samplez_nmos_apply_failures_total{port="sender/out"} 1"#)
+    });
+    // Still trying, the engine would retry 7 s after the enable (backoff
+    // 1 s, 2 s, 4 s) and create the flow once the foreign writer is gone.
+    drop(foreign);
+    std::thread::sleep(3 * SECOND);
+    assert!(!domain.has_flow(&out), "the failed output created its flow");
+
+    // SIGTERM: the node leaves the registry while its flows are still
+    // there. Enabled again first, so the output's flow is written.
+    stage(
+        &foldz,
+        "senders",
+        &sender,
+        json!({ "master_enable": true, "activation": immediate() }),
+    );
+    wait_for(10 * SECOND, "the output flow back", || {
+        domain.has_flow(&out)
+    });
+    wait_for(15 * SECOND, "a heartbeat", || {
+        registry
+            .seen()
+            .iter()
+            .any(|s| s.method == "POST" && s.path.contains("/health/nodes/"))
+    });
+    let node_id = node.as_str().unwrap();
+    assert!(
+        registry
+            .seen()
+            .iter()
+            .any(|s| s.method == "POST" && s.path.ends_with("/resource")),
+        "{:?}",
+        registry.seen()
+    );
+
+    // The same seed gives the same ids after a restart.
+    assert!(foldz.terminate(), "foldz exits 0 on SIGTERM");
+    assert!(!domain.has_flow(&out));
+    let deletes: Vec<_> = registry
+        .seen()
+        .into_iter()
+        .filter(|s| s.method == "DELETE")
+        .collect();
+    assert_eq!(deletes.len(), 1, "{deletes:?}");
+    assert!(
+        deletes[0].path.ends_with(&format!(
+            "/x-nmos/registration/v1.3/resource/nodes/{node_id}"
+        )),
+        "{deletes:?}"
+    );
+    assert!(
+        deletes[0].flow_present,
+        "the node was deleted after its flows"
+    );
+    let foldz = Foldz::start(&file);
+    assert_eq!(get(foldz.nmos, "/x-nmos/node/v1.3/self").1["id"], node);
+    assert_eq!(resource_id(&foldz, "receivers", "main"), receiver);
+    assert_eq!(resource_id(&foldz, "senders", "out"), sender);
+    assert!(foldz.terminate(), "foldz exits 0 on SIGTERM");
 }

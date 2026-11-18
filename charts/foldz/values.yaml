@@ -51,8 +51,8 @@ rt:
   rtCpu: auto
 
 nmos:
-  # NMOS is not implemented yet: true fails rendering. The listener on
-  # nmos.port is bound either way.
+  # The chart does not render foldz's NMOS settings yet: true fails
+  # rendering. The listener on nmos.port is bound either way.
   enabled: false
   port: 8081
   service:

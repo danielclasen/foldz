@@ -16,6 +16,12 @@ use crate::presets::{Fold, Lfe, Mapping, PresetName, fold};
 /// members, and an unreplicated output has one.
 pub const MAX_MEMBERS: usize = 7;
 
+/// The flow an unconnected input's engine slot is started on and detached
+/// from at once: samplez starts every slot on a flow. The nil UUID is no
+/// MXL flow id (BCP-007-03 requires a version digit of 1 or above), so no
+/// writer produces it, and the config refuses it as a flow id.
+pub const UNCONNECTED_FLOW: &str = "00000000-0000-0000-0000-000000000000";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
@@ -114,9 +120,11 @@ fn default_ramp() -> u32 {
     480
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Nmos {
+    /// Registers the inputs and outputs as NMOS receivers and senders and
+    /// takes IS-05 connections on the NMOS listener.
     #[serde(default)]
     pub enabled: bool,
     /// Seed of the UUIDv5 NMOS resource ids.
@@ -132,12 +140,66 @@ pub struct Nmos {
     pub advertise_port: u16,
     #[serde(default)]
     pub registry: Registry,
+    #[serde(default)]
+    pub asset: Asset,
+    /// Seconds between heartbeats to the registry, and the timeout of each
+    /// request to it; 1 to 60.
+    #[serde(default = "default_heartbeat")]
+    pub heartbeat_s: u64,
+}
+
+impl Default for Nmos {
+    fn default() -> Self {
+        Nmos {
+            enabled: false,
+            seed: None,
+            seed_name: String::new(),
+            advertise_host: String::new(),
+            advertise_port: 0,
+            registry: Registry::default(),
+            asset: Asset::default(),
+            heartbeat_s: default_heartbeat(),
+        }
+    }
+}
+
+impl Nmos {
+    /// The string the NMOS resource ids derive from: `seed`, else
+    /// `seedName`.
+    pub fn seed(&self) -> &str {
+        self.seed.as_deref().unwrap_or(&self.seed_name)
+    }
+}
+
+fn default_heartbeat() -> u64 {
+    5
+}
+
+/// BCP-002-02 asset tags of the Node and Device.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Asset {
+    #[serde(default = "default_manufacturer")]
+    pub manufacturer: String,
+}
+
+impl Default for Asset {
+    fn default() -> Self {
+        Asset {
+            manufacturer: default_manufacturer(),
+        }
+    }
+}
+
+fn default_manufacturer() -> String {
+    "danielclasen".to_owned()
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Registry {
-    /// Overrides discovery when set.
+    /// `http://host[:port]` of a Registration API; overrides discovery
+    /// when set.
     #[serde(default)]
     pub url: String,
     /// Domain browsed by unicast DNS-SD.
@@ -151,6 +213,10 @@ pub struct Registry {
 pub struct Domain {
     pub name: String,
     pub path: String,
+    /// The domain's MXL id, for NMOS; the domain's `domain_def.json`
+    /// gives it when present, and both present must agree.
+    #[serde(default)]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -264,8 +330,17 @@ pub fn is_lowercase_uuid(s: &str) -> bool {
         })
 }
 
+/// Whether `s` is an MXL UUID: lowercase, with a version digit of 1 or
+/// above and the RFC 4122 variant, the pattern of AMWA BCP-007-03.
+pub fn is_mxl_uuid(s: &str) -> bool {
+    let b = s.as_bytes();
+    is_lowercase_uuid(s) && b[14] != b'0' && matches!(b[19], b'8' | b'9' | b'a' | b'b')
+}
+
 fn check_uuid(at: &str, id: &str) -> Result<(), ConfigError> {
-    if is_lowercase_uuid(id) {
+    if id == UNCONNECTED_FLOW {
+        err(at, "the nil UUID is reserved")
+    } else if is_lowercase_uuid(id) {
         Ok(())
     } else {
         err(
@@ -412,6 +487,9 @@ impl Config {
             if !paths.insert(normal) {
                 return err(at, format!("path {:?} is used twice", d.path));
             }
+            if let Some(id) = &d.id {
+                check_uuid(&format!("{at}.id"), id)?;
+            }
             domains.push(d.name.as_str());
         }
 
@@ -451,7 +529,52 @@ impl Config {
                 .map_err(named("output", &output.name))?;
             folds.push(folded);
         }
+        if self.nmos.enabled {
+            self.check_nmos_model()?;
+        }
         Ok(folds)
+    }
+
+    /// What the NMOS node model takes beyond the rest of the config: MXL
+    /// UUIDs (BCP-007-03) for every flow and domain id, and one Sender per
+    /// grouphint group.
+    fn check_nmos_model(&self) -> Result<(), ConfigError> {
+        let mxl = |at: String, id: &str| {
+            if is_mxl_uuid(id) {
+                Ok(())
+            } else {
+                err(
+                    at,
+                    format!(
+                        "{id} is not an MXL UUID (version digit 1 to f, variant 8 to b), which NMOS needs"
+                    ),
+                )
+            }
+        };
+        for (i, d) in self.domains.iter().enumerate() {
+            if let Some(id) = &d.id {
+                mxl(format!("domains[{i}].id"), id)?;
+            }
+        }
+        for (i, input) in self.inputs.iter().enumerate() {
+            if let Some(flow) = &input.flow {
+                mxl(format!("inputs[{i}].flow"), flow)?;
+            }
+        }
+        let mut groups = HashSet::new();
+        for (i, output) in self.outputs.iter().enumerate() {
+            mxl(format!("outputs[{i}].flows[0]"), &output.flows[0])?;
+            if !groups.insert(output.group()) {
+                return err(
+                    format!("outputs[{i}].group"),
+                    format!(
+                        "group {:?} is another output's; NMOS gives each group one Sender",
+                        output.group()
+                    ),
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Reads, parses and checks the config file at `path`, and returns it
@@ -465,18 +588,15 @@ impl Config {
     }
 
     /// The samplez engine config of this foldz config and its `folds`, from
-    /// [`Config::validate`]: one engine input per input with a flow, one
-    /// engine output per output, and one gain matrix holding every
-    /// output's fold, rows per input channel and columns per output
-    /// channel. An output whose input has no flow gets zero gains: it is
-    /// written silent.
+    /// [`Config::validate`]: one engine input per input, one engine output
+    /// per output, and one gain matrix holding every output's fold, rows
+    /// per input channel and columns per output channel. An input without
+    /// a flow starts on [`UNCONNECTED_FLOW`], to be detached at once; an
+    /// output whose input reads nothing is written silent.
     ///
-    /// Refuses what this build does not implement: NMOS, and more than one
-    /// member flow per output, which needs replication.
+    /// Refuses what this build does not implement: more than one member
+    /// flow per output, which needs replication.
     pub fn engine(&self, folds: &[Fold]) -> Result<samplez::Config, ConfigError> {
-        if self.nmos.enabled {
-            return err("nmos.enabled", "NMOS is not implemented in this build");
-        }
         if self.outputs.iter().any(|o| o.flows.len() > 1) {
             return err(
                 "outputs",
@@ -492,21 +612,19 @@ impl Config {
                 .expect("validate resolved the domain")
                 .to_owned()
         };
-        // The first engine matrix row of each input that has a flow.
+        // The first engine matrix row of each input.
         let mut first_row = Vec::with_capacity(self.inputs.len());
         let mut rows = 0;
         let mut inputs = Vec::new();
         for input in &self.inputs {
-            first_row.push(input.flow.as_ref().map(|_| rows));
-            if let Some(flow) = &input.flow {
-                rows += input.channels;
-                inputs.push(serde_json::json!({
-                    "name": input.name,
-                    "domain": domain(&input.domain),
-                    "flowId": flow,
-                    "channels": input.channels,
-                }));
-            }
+            first_row.push(rows);
+            rows += input.channels;
+            inputs.push(serde_json::json!({
+                "name": input.name,
+                "domain": domain(&input.domain),
+                "flowId": input.flow.as_deref().unwrap_or(UNCONNECTED_FLOW),
+                "channels": input.channels,
+            }));
         }
         let columns: usize = folds.iter().map(|f| f.matrix.outputs()).sum();
         let mut matrix = vec![vec![0.0f32; columns]; rows];
@@ -518,11 +636,10 @@ impl Config {
                 None => Some(0),
             }
             .expect("validate resolved the input");
-            if let Some(first) = first_row[input] {
-                for j in 0..f.matrix.outputs() {
-                    for i in 0..f.matrix.inputs() {
-                        matrix[first + i][column + j] = f.matrix.gain(j, i);
-                    }
+            let first = first_row[input];
+            for j in 0..f.matrix.outputs() {
+                for i in 0..f.matrix.inputs() {
+                    matrix[first + i][column + j] = f.matrix.gain(j, i);
                 }
             }
             column += f.matrix.outputs();
@@ -745,6 +862,12 @@ impl Config {
                 format!("{:?} is not an http or https URL", registry.url),
             );
         }
+        if !(1..=60).contains(&nmos.heartbeat_s) {
+            return err("nmos.heartbeatS", "1 to 60 seconds are allowed");
+        }
+        if nmos.asset.manufacturer.is_empty() {
+            return err("nmos.asset.manufacturer", "is empty");
+        }
         if !registry.dns_sd_domain.is_empty() && !is_dns_name(&registry.dns_sd_domain) {
             return err(
                 "nmos.registry.dnsSdDomain",
@@ -757,6 +880,34 @@ impl Config {
             }
             if nmos.advertise_host.is_empty() {
                 return err("nmos.advertiseHost", "required when NMOS is enabled");
+            }
+            let listener = &self.listeners.nmos;
+            if nmos.advertise_port == 0 && listener.port == 0 {
+                return err(
+                    "nmos.advertisePort",
+                    "required when listeners.nmos.port is 0",
+                );
+            }
+            if listener.tls.mode != samplez_service::config::TlsMode::None {
+                return err(
+                    "listeners.nmos.tls",
+                    "the Node advertises its APIs over plain HTTP",
+                );
+            }
+            // The registration client speaks plain HTTP and appends the
+            // API path itself.
+            let base = registry.url.strip_suffix('/').unwrap_or(&registry.url);
+            let plain = base
+                .strip_prefix("http://")
+                .is_some_and(|rest| !rest.contains('/'));
+            if !registry.url.is_empty() && !plain {
+                return err(
+                    "nmos.registry.url",
+                    format!(
+                        "{:?} is not an http://host[:port] URL, which NMOS needs",
+                        registry.url
+                    ),
+                );
             }
         }
         Ok(())

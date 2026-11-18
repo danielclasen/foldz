@@ -1,6 +1,24 @@
 {
   "components": {
     "schemas": {
+      "AppliedState": {
+        "enum": [
+          "initial",
+          "applying",
+          "applied",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "AuthMode": {
+        "enum": [
+          "none",
+          "token",
+          "proxy",
+          "oidc"
+        ],
+        "type": "string"
+      },
       "Counters": {
         "description": "The engine counters since start.",
         "properties": {
@@ -127,7 +145,7 @@
             "type": "string"
           },
           "flow": {
-            "description": "The MXL flow read; `null` leaves the input unconnected.",
+            "description": "The MXL flow read at start-up; `null` starts the input\nunconnected.",
             "type": [
               "string",
               "null"
@@ -306,6 +324,13 @@
               "null"
             ]
           },
+          "flow": {
+            "description": "The MXL flow read; `null` when unconnected.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "marginShort": {
             "description": "The margin in samples the producer's declared commit batch needs,\nwhen `readerMarginSamples` is below it.",
             "format": "int64",
@@ -350,6 +375,98 @@
         ],
         "type": "object"
       },
+      "Logout": {
+        "properties": {
+          "redirect": {
+            "description": "Where the browser goes next to end its session at the identity\nprovider too; `oidc` mode with a provider that has an end-session\nendpoint only.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "NmosPort": {
+        "description": "One sender (an output) or receiver (an input) and its IS-05 `/active`.",
+        "properties": {
+          "applied": {
+            "$ref": "#/components/schemas/AppliedState"
+          },
+          "error": {
+            "description": "Why the last activation failed; it turned `masterEnable` false.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failures": {
+            "description": "Activations that failed since start.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PortKind"
+          },
+          "masterEnable": {
+            "type": "boolean"
+          },
+          "mxlDomainId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mxlFlowId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "The output's or input's name.",
+            "type": "string"
+          },
+          "pending": {
+            "description": "TAI `<seconds>:<nanoseconds>` of a scheduled activation not fired\nyet.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "masterEnable",
+          "applied",
+          "failures"
+        ],
+        "type": "object"
+      },
+      "NmosStatus": {
+        "properties": {
+          "ports": {
+            "description": "Every sender, then every receiver.",
+            "items": {
+              "$ref": "#/components/schemas/NmosPort"
+            },
+            "type": "array"
+          },
+          "registry": {
+            "description": "The Registration API the node is registered with.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ports"
+        ],
+        "type": "object"
+      },
       "OutputStatus": {
         "properties": {
           "attempts": {
@@ -370,6 +487,10 @@
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "enabled": {
+            "description": "Whether the output is to be written; an IS-05 sender activation\nsets it.",
+            "type": "boolean"
           },
           "maxCommitBatchSizeHint": {
             "description": "The effective `maxCommitBatchSizeHint` and `maxSyncBatchSizeHint`.",
@@ -411,12 +532,27 @@
         },
         "required": [
           "name",
+          "enabled",
           "realised",
           "attempts",
           "races",
           "createFailures"
         ],
         "type": "object"
+      },
+      "PortKind": {
+        "enum": [
+          "sender",
+          "receiver"
+        ],
+        "type": "string"
+      },
+      "Role": {
+        "enum": [
+          "viewer",
+          "operator"
+        ],
+        "type": "string"
       },
       "RtStep": {
         "properties": {
@@ -437,6 +573,35 @@
         ],
         "type": "object"
       },
+      "Session": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/AuthMode"
+          },
+          "role": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Role",
+                "description": "`None` when not signed in."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "user": {
+            "description": "`None` when not signed in, in `none` mode and for a static token.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
       "Status": {
         "properties": {
           "counters": {
@@ -454,6 +619,17 @@
               "$ref": "#/components/schemas/InputStatus"
             },
             "type": "array"
+          },
+          "nmos": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NmosStatus",
+                "description": "`null` with NMOS disabled."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "outputs": {
             "items": {
@@ -626,6 +802,71 @@
         ]
       }
     },
+    "/api/v1/logout": {
+      "post": {
+        "operationId": "logout",
+        "parameters": [
+          {
+            "description": "Must be 1",
+            "in": "header",
+            "name": "X-Samplez-Request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Logout"
+                }
+              }
+            },
+            "description": "Session cookie cleared"
+          },
+          "403": {
+            "description": "Host not allowed or request header missing"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Clears the session cookie and ends the session on this process until\nit restarts, for\nany copy of the cookie and the WebSockets opened with it; `token` and\n`oidc` mode.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/session": {
+      "get": {
+        "operationId": "session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "The mode and the identity, if any"
+          },
+          "403": {
+            "description": "Host not allowed"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Who the request is authenticated as. Answered without credentials as\nwell, with no role, so a client learns how to sign in: in `oidc` mode\nat `GET /login`, in `token` mode with `POST /login`.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/status": {
       "get": {
         "operationId": "status",
@@ -644,7 +885,7 @@
             "description": "The engine has stopped"
           }
         },
-        "summary": "The engine's RT setup, inputs, outputs and counters.",
+        "summary": "The engine's RT setup, inputs, outputs and counters, and the NMOS\nconnections.",
         "tags": [
           "foldz"
         ]

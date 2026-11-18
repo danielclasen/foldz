@@ -102,6 +102,53 @@ jobs:
           fi
           dist/foldz --version | grep -q '^foldz '
 
+  # The AMWA nmos-testing node suites against the foldz image, gated by
+  # tests/nmos/gate.py on tests/nmos/expected.json.
+  nmos:
+    runs-on: ubuntu-24.04
+    env:
+      NMOS_TESTING: b21639f3a187c0e027bb7894fbe0c21d22285dfb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: foldz:ci
+          cache-from: type=gha,scope=image
+      - name: Check out nmos-testing
+        run: |
+          git init -q nmos-testing
+          git -C nmos-testing fetch -q --depth 1 https://github.com/AMWA-TV/nmos-testing "$NMOS_TESTING"
+          git -C nmos-testing checkout -q FETCH_HEAD
+      - name: Build the nmos-testing image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: nmos-testing
+          load: true
+          tags: nmos-testing:ci
+          cache-from: type=gha,scope=nmos-testing
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,scope=nmos-testing,mode=max' || '' }}
+      # foldz reads CLOCK_TAI, the tool computes TAI from UTC: absolute
+      # activations meet only with the kernel's TAI offset set.
+      - name: Set the kernel TAI offset
+        run: sudo python3 tests/nmos/set-tai-offset.py 37
+      - name: Run the suites
+        run: tests/nmos/conformance.sh foldz:ci nmos-testing:ci nmos-results
+      - name: Gate on the results
+        run: |
+          python3 -B -m unittest tests/nmos/test_gate.py
+          python3 tests/nmos/gate.py tests/nmos/expected.json nmos-results
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nmos-testing-results
+          path: nmos-results
+
   chart:
     runs-on: ubuntu-24.04
     env:

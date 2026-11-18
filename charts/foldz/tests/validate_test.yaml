@@ -16,12 +16,12 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "witness.enabled: foldz does not implement replication yet"
-  - it: refuses NMOS while it is not implemented
+  - it: refuses NMOS while the chart does not render its settings
     set:
       nmos.enabled: true
     asserts:
       - failedTemplate:
-          errorPattern: "nmos.enabled: foldz does not implement NMOS yet"
+          errorPattern: "nmos.enabled: the chart does not render foldz's NMOS settings yet"
   - it: refuses replication settings the chart does not have
     set:
       replica.voters: 3

@@ -64,6 +64,7 @@ fn service() -> Service {
         config,
         downmix,
         service.status(),
+        None,
     );
     service.api(router)
 }
@@ -191,10 +192,10 @@ async fn the_standalone_state_takes_no_command() {
         (replica.id.as_str(), replica.role.as_str()),
         ("r0", "standalone")
     );
-    assert!(replica.in_sync);
+    assert!(replica.in_sync && replica.ready && replica.commitable);
     assert_eq!(state.revision(), 0);
     assert!(state.submit(&owner(), "1", "{}".into()).await.is_err());
-    assert_eq!(state.command_revision(&owner(), "1"), None);
+    assert_eq!(state.command_resolution(&owner(), "1"), None);
     let here = Position {
         epoch: state.epoch(),
         revision: 0,

@@ -11,12 +11,13 @@ use axum::routing::get;
 use axum::{Json, Router};
 use samplez::rt::Step;
 use samplez::{Engine, InputState};
+use samplez_nmos::{Applied, Nmos, PortKey};
 use samplez_service::StatusSource;
 use samplez_service::config::TlsMode;
 use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
 
-use crate::config::Config;
+use crate::config::{Config, UNCONNECTED_FLOW};
 use crate::presets::{Fold, Lfe, PresetName};
 
 /// The running engine; `None` once it stopped.
@@ -36,7 +37,8 @@ pub struct Downmix {
 pub struct DownmixInput {
     pub name: String,
     pub domain: String,
-    /// The MXL flow read; `null` leaves the input unconnected.
+    /// The MXL flow read at start-up; `null` starts the input
+    /// unconnected.
     pub flow: Option<String>,
     /// IS-04 channel symbols, `-` for an unused channel.
     pub layout: Vec<String>,
@@ -139,6 +141,91 @@ pub struct Status {
     pub counters: Counters,
     /// One per listener that runs TLS.
     pub tls: Vec<TlsStatus>,
+    /// `null` with NMOS disabled.
+    pub nmos: Option<NmosStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NmosStatus {
+    /// The Registration API the node is registered with.
+    pub registry: Option<String>,
+    /// Every sender, then every receiver.
+    pub ports: Vec<NmosPort>,
+}
+
+/// One sender (an output) or receiver (an input) and its IS-05 `/active`.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NmosPort {
+    pub kind: PortKind,
+    /// The output's or input's name.
+    pub name: String,
+    pub master_enable: bool,
+    pub mxl_domain_id: Option<String>,
+    pub mxl_flow_id: Option<String>,
+    /// TAI `<seconds>:<nanoseconds>` of a scheduled activation not fired
+    /// yet.
+    pub pending: Option<String>,
+    pub applied: AppliedState,
+    /// Why the last activation failed; it turned `masterEnable` false.
+    pub error: Option<String>,
+    /// Activations that failed since start.
+    pub failures: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PortKind {
+    Sender,
+    Receiver,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum AppliedState {
+    /// Nothing activated since start.
+    Initial,
+    Applying,
+    Applied,
+    Failed,
+}
+
+impl NmosStatus {
+    pub fn of(nmos: &Nmos) -> NmosStatus {
+        let s = nmos.status();
+        let ports = s
+            .ports
+            .into_iter()
+            .map(|p| {
+                let (kind, name) = match p.key {
+                    PortKey::Sender(k) => (PortKind::Sender, k),
+                    PortKey::Receiver(k) => (PortKind::Receiver, k),
+                };
+                let (applied, error) = match p.applied {
+                    Applied::Initial => (AppliedState::Initial, None),
+                    Applied::Applying => (AppliedState::Applying, None),
+                    Applied::Applied => (AppliedState::Applied, None),
+                    Applied::Failed(why) => (AppliedState::Failed, Some(why)),
+                };
+                NmosPort {
+                    kind,
+                    name,
+                    master_enable: p.active.master_enable,
+                    mxl_domain_id: p.active.domain.map(|d| d.to_string()),
+                    mxl_flow_id: p.active.flow.map(|f| f.to_string()),
+                    pending: p.pending.map(|t| format!("{}:{}", t.sec, t.nsec)),
+                    applied,
+                    error,
+                    failures: p.failures,
+                }
+            })
+            .collect();
+        NmosStatus {
+            registry: s.registry,
+            ports,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -166,6 +253,8 @@ pub struct InputStatus {
     pub name: String,
     /// `unconnected` for an input without a flow, which is not read.
     pub state: InputStateName,
+    /// The MXL flow read; `null` when unconnected.
+    pub flow: Option<String>,
     /// Why the last attach failed.
     pub error: Option<String>,
     /// The margin in samples the producer's declared commit batch needs,
@@ -204,6 +293,9 @@ pub struct InputCounters {
 #[serde(rename_all = "camelCase")]
 pub struct OutputStatus {
     pub name: String,
+    /// Whether the output is to be written; an IS-05 sender activation
+    /// sets it.
+    pub enabled: bool,
     /// Whether the output's flow is created and written.
     pub realised: bool,
     /// Why it is not.
@@ -306,9 +398,15 @@ fn rt_step(name: &str, step: &Step) -> RtStep {
     }
 }
 
+/// Whether the engine reads input `e`: an input left on
+/// [`UNCONNECTED_FLOW`] until its detach applies reads nothing either.
+pub fn connected(e: &samplez::InputStatus) -> bool {
+    e.state != InputState::Detached && e.flow_id != UNCONNECTED_FLOW
+}
+
 impl Status {
     /// The engine's status; `config` names the inputs, in config order.
-    pub fn of(engine: &Engine, config: &Config, tls: &StatusSource) -> Status {
+    pub fn of(engine: &Engine, config: &Config, tls: &StatusSource, nmos: Option<&Nmos>) -> Status {
         let s = engine.status();
         let (p, t) = (&s.rt.process, &s.rt.thread);
         let rt = [
@@ -328,20 +426,23 @@ impl Status {
             .inputs
             .iter()
             .map(|i| match s.inputs.iter().find(|e| e.name == i.name) {
-                Some(e) => InputStatus {
+                Some(e) if connected(e) => InputStatus {
                     name: i.name.clone(),
-                    state: match e.state {
-                        InputState::Attached => InputStateName::Attached,
-                        InputState::Pruned => InputStateName::Pruned,
+                    state: if e.state == InputState::Pruned {
+                        InputStateName::Pruned
+                    } else {
+                        InputStateName::Attached
                     },
+                    flow: Some(e.flow_id.clone()),
                     error: e.error.clone(),
                     margin_short: e.margin_short,
                     margin_warning: e.margin_warning,
                     counters: InputCounters::of(e),
                 },
-                None => InputStatus {
+                _ => InputStatus {
                     name: i.name.clone(),
                     state: InputStateName::Unconnected,
+                    flow: None,
                     error: None,
                     margin_short: None,
                     margin_warning: None,
@@ -354,6 +455,7 @@ impl Status {
             .iter()
             .map(|o| OutputStatus {
                 name: o.name.clone(),
+                enabled: o.enabled,
                 realised: o.realised,
                 reason: o.reason.clone(),
                 attempts: o.attempts,
@@ -389,6 +491,7 @@ impl Status {
             outputs,
             counters: Counters::of(engine.counters()),
             tls,
+            nmos: nmos.map(NmosStatus::of),
         }
     }
 }
@@ -398,6 +501,7 @@ struct App {
     config: Config,
     downmix: Downmix,
     tls: StatusSource,
+    nmos: Option<Nmos>,
 }
 
 /// The downmix as configured.
@@ -411,7 +515,8 @@ async fn downmix(State(app): State<Arc<App>>) -> Json<Downmix> {
     Json(app.downmix.clone())
 }
 
-/// The engine's RT setup, inputs, outputs and counters.
+/// The engine's RT setup, inputs, outputs and counters, and the NMOS
+/// connections.
 #[utoipa::path(
     get,
     path = "/status",
@@ -424,18 +529,25 @@ async fn downmix(State(app): State<Arc<App>>) -> Json<Downmix> {
 async fn status(State(app): State<Arc<App>>) -> Response {
     let engine = app.engine.lock().expect("engine lock poisoned");
     match engine.as_ref() {
-        Some(e) => Json(Status::of(e, &app.config, &app.tls)).into_response(),
+        Some(e) => Json(Status::of(e, &app.config, &app.tls, app.nmos.as_ref())).into_response(),
         None => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
 }
 
 /// The routes under `/api/v1`.
-pub fn router(engine: EngineSlot, config: Config, downmix: Downmix, tls: StatusSource) -> Router {
+pub fn router(
+    engine: EngineSlot,
+    config: Config,
+    downmix: Downmix,
+    tls: StatusSource,
+    nmos: Option<Nmos>,
+) -> Router {
     let app = Arc::new(App {
         engine,
         config,
         downmix,
         tls,
+        nmos,
     });
     Router::new()
         .route("/downmix", get(self::downmix))

@@ -1,13 +1,14 @@
 //! Passes the engine's heartbeat and counters to the ops listener: the RT
-//! thread's heartbeat drives `/healthz`, and the engine and per-input
-//! counters are rendered on `/metrics`.
+//! thread's heartbeat drives `/healthz`, and the engine, per-input and
+//! NMOS counters are rendered on `/metrics`.
 
 use std::time::Duration;
 
 use samplez::Engine;
+use samplez_nmos::{Nmos, PortKey};
 use samplez_service::{Counter, Metrics, Ops};
 
-use crate::api::{Counters, EngineSlot, InputCounters};
+use crate::api::{Counters, EngineSlot, InputCounters, connected};
 
 /// How often [`Exporter::run`] samples the engine.
 pub const PERIOD: Duration = Duration::from_millis(100);
@@ -158,11 +159,35 @@ pub struct Exporter {
     exported: Vec<Exported>,
     inputs: Vec<Input>,
     heartbeat: u64,
+    nmos: Option<(Nmos, Vec<(Counter, u64)>)>,
 }
 
 impl Exporter {
-    pub fn new(ops: Ops, engine: EngineSlot) -> Exporter {
+    /// With `nmos`, also exports `samplez_nmos_apply_failures_total{port}`
+    /// and samplez-nmos's own metrics.
+    pub fn new(ops: Ops, engine: EngineSlot, nmos: Option<Nmos>) -> Exporter {
         let metrics: &Metrics = ops.metrics();
+        let nmos = nmos.map(|n| {
+            n.register_metrics(metrics);
+            let failures = n
+                .status()
+                .ports
+                .iter()
+                .map(|p| {
+                    let port = match &p.key {
+                        PortKey::Sender(k) => format!("sender/{k}"),
+                        PortKey::Receiver(k) => format!("receiver/{k}"),
+                    };
+                    let counter = metrics.counter(
+                        "samplez_nmos_apply_failures_total",
+                        "IS-05 activations the engine did not take on; each turned the port's master_enable false.",
+                        &[("port", &port)],
+                    );
+                    (counter, 0)
+                })
+                .collect();
+            (n, failures)
+        });
         let exported = ENGINE
             .iter()
             .map(|(name, value, help)| Exported {
@@ -177,14 +202,21 @@ impl Exporter {
             exported,
             inputs: Vec::new(),
             heartbeat: 0,
+            nmos,
         }
     }
 
     /// Beats the ops heartbeat when the RT thread's has advanced since the
-    /// last call, and adds what each engine and input counter gained to
-    /// its metric. An input's series appear once the engine reports it;
-    /// an unconnected input has none.
+    /// last call, and adds what each engine, input and NMOS counter gained
+    /// to its metric. An input's series appear once the engine reads it;
+    /// an input never connected has none.
     pub fn sample(&mut self) {
+        if let Some((nmos, failures)) = &mut self.nmos {
+            for (p, (counter, last)) in nmos.status().ports.iter().zip(failures) {
+                counter.add(p.failures.saturating_sub(*last));
+                *last = p.failures;
+            }
+        }
         let engine = self.engine.lock().expect("engine lock poisoned");
         let Some(engine): Option<&Engine> = engine.as_ref() else {
             return;
@@ -200,6 +232,10 @@ impl Exporter {
             e.last = now;
         }
         for status in engine.status().inputs {
+            let known = self.inputs.iter().any(|i| i.name == status.name);
+            if !known && !connected(&status) {
+                continue;
+            }
             let i = match self.inputs.iter().position(|i| i.name == status.name) {
                 Some(i) => i,
                 None => {

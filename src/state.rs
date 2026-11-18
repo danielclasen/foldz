@@ -7,9 +7,9 @@ use std::hash::BuildHasher;
 
 use axum::body::Bytes;
 use futures_util::future::BoxFuture;
-use samplez_service::replica::{Ack, NotApplied};
+use samplez_service::replica::{Ack, NotApplied, Reason, Resolution};
 use samplez_service::ws::{Delta, Snapshot};
-use samplez_service::{Owner, Position, ReplicaInfo, ReplicatedState};
+use samplez_service::{Owner, Position, ReadIndex, ReplicaInfo, ReplicatedState};
 
 pub struct Standalone {
     id: String,
@@ -35,6 +35,8 @@ impl ReplicatedState for Standalone {
             leader: None,
             in_sync: true,
             lag: Some(0),
+            ready: true,
+            commitable: true,
         }
     }
 
@@ -44,6 +46,14 @@ impl ReplicatedState for Standalone {
 
     fn revision(&self) -> u64 {
         0
+    }
+
+    fn read_index(&self) -> BoxFuture<'_, ReadIndex> {
+        Box::pin(async { ReadIndex::Confirmed(0) })
+    }
+
+    fn applied(&self, _revision: u64) -> BoxFuture<'_, ()> {
+        Box::pin(async {})
     }
 
     fn snapshot(&self) -> BoxFuture<'_, Snapshot> {
@@ -60,7 +70,7 @@ impl ReplicatedState for Standalone {
         Box::pin(async move { deltas })
     }
 
-    fn command_revision(&self, _owner: &Owner, _id: &str) -> Option<u64> {
+    fn command_resolution(&self, _owner: &Owner, _id: &str) -> Option<(u64, Resolution)> {
         None
     }
 
@@ -70,7 +80,12 @@ impl ReplicatedState for Standalone {
         _id: &str,
         _command: Bytes,
     ) -> BoxFuture<'_, Result<Ack, NotApplied>> {
-        Box::pin(async { Err(NotApplied("foldz takes no commands".into())) })
+        Box::pin(async {
+            Err(NotApplied {
+                reason: Reason::Invalid,
+                detail: "foldz takes no commands".into(),
+            })
+        })
     }
 
     fn renew_sessions(&self, _live: &[Owner]) {}

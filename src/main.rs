@@ -1,10 +1,13 @@
 //! `foldz --config <file>`: runs the downmix until SIGINT or SIGTERM, then
-//! releases its writers, which deletes their flows.
+//! deletes its NMOS node from the registry and releases its writers, which
+//! deletes their flows.
 
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use foldz::api::{self, Downmix};
 use foldz::config::Config;
@@ -16,6 +19,11 @@ use samplez_service::{Ops, Service, ServiceConfig};
 /// The stack of the thread that serves the listeners. Threads get
 /// samplez's capped default otherwise.
 const SERVICE_STACK: usize = 2 * 1024 * 1024;
+
+/// How long SIGTERM waits for the registry to answer the Node's DELETE,
+/// well inside a pod's default 30 s termination grace period, so the
+/// writers are released and their flows deleted before a SIGKILL.
+const UNREGISTER_WAIT: Duration = Duration::from_secs(5);
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -79,10 +87,41 @@ fn main() -> ExitCode {
         }
     };
     let slot: api::EngineSlot = Arc::new(Mutex::new(None));
+    let nmos = if config.nmos.enabled {
+        match foldz::nmos::node(&config, slot.clone()) {
+            Ok(n) => Some(n),
+            Err(e) => {
+                eprintln!("foldz: nmos: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    } else {
+        None
+    };
+    if let Some(n) = &nmos {
+        eprintln!("foldz: nmos node {}", n.node_id());
+        let bind = config.listeners.nmos.bind;
+        let host = &config.nmos.advertise_host;
+        let loopback = host == "localhost" || host.parse::<IpAddr>().is_ok_and(|a| a.is_loopback());
+        if bind.is_loopback() && !loopback {
+            eprintln!(
+                "foldz: warning: the NMOS listener is bound to {bind}, which {host} does not reach"
+            );
+        }
+    }
     let downmix = Downmix::new(&config, &folds);
     let tls = service.status();
-    let router = api::router(slot.clone(), config.clone(), downmix, tls.clone());
-    let service = service.api(router);
+    let router = api::router(
+        slot.clone(),
+        config.clone(),
+        downmix,
+        tls.clone(),
+        nmos.clone(),
+    );
+    let mut service = service.api(router);
+    if let Some(n) = &nmos {
+        service = service.nmos(n.router());
+    }
 
     // A current-thread runtime starts no thread, so the listeners are bound
     // here and a taken port stops the start before any flow is created.
@@ -122,7 +161,18 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let status = api::Status::of(&engine, &config, &tls);
+    // An input without a flow was started on UNCONNECTED_FLOW and reads
+    // nothing from here on.
+    for (i, input) in config.inputs.iter().enumerate() {
+        if input.flow.is_none()
+            && let Err(e) = engine.detach(i, 0)
+        {
+            eprintln!("foldz: engine: detaching input {}: {e}", input.name);
+            engine.stop();
+            return ExitCode::FAILURE;
+        }
+    }
+    let status = api::Status::of(&engine, &config, &tls, nmos.as_ref());
     for step in status.rt {
         eprintln!("foldz: rt {}: {:?}: {}", step.name, step.state, step.detail);
     }
@@ -135,37 +185,64 @@ fn main() -> ExitCode {
     *slot.lock().expect("engine lock poisoned") = Some(engine);
     ops.set_engine_started(true);
 
-    let exporter = Exporter::new(ops.clone(), slot.clone());
+    let exporter = Exporter::new(ops.clone(), slot.clone(), nmos.clone());
     // Set before the service thread signals, so it is set when sigwait
     // returns for that signal.
     let serve_failed = Arc::new(AtomicBool::new(false));
     let failed = serve_failed.clone();
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let served = std::thread::Builder::new()
         .name("foldz-service".into())
         .stack_size(SERVICE_STACK)
         .spawn(move || {
-            let result = runtime.block_on(async {
-                tokio::select! {
-                    r = bound.serve() => r,
+            let (result, stopping) = runtime.block_on(async {
+                let registration = async {
+                    if let Some(n) = &nmos {
+                        n.registration().await;
+                    }
+                    std::future::pending::<()>().await
+                };
+                let (result, stopping) = tokio::select! {
+                    r = bound.serve() => (r, false),
                     () = exporter.run() => unreachable!("the exporter never returns"),
+                    () = registration => unreachable!("registration never returns"),
+                    _ = stopped => (Ok(()), true),
+                };
+                // Registration is dropped, so no POST lands after the
+                // DELETE.
+                if let Some(n) = &nmos
+                    && tokio::time::timeout(UNREGISTER_WAIT, n.unregister())
+                        .await
+                        .is_err()
+                {
+                    eprintln!("foldz: nmos: the registry did not answer the node's DELETE");
                 }
+                (result, stopping)
             });
             if let Err(e) = result {
                 eprintln!("foldz: serving: {e}");
                 failed.store(true, Ordering::SeqCst);
             }
-            // SAFETY: SIGTERM to this process ends the sigwait below.
-            unsafe { libc::kill(libc::getpid(), libc::SIGTERM) };
+            if !stopping {
+                // SAFETY: SIGTERM to this process ends the sigwait below.
+                unsafe { libc::kill(libc::getpid(), libc::SIGTERM) };
+            }
         });
-    if let Err(e) = served {
-        eprintln!("foldz: service thread: {e}");
-        return ExitCode::FAILURE;
-    }
+    let served = match served {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("foldz: service thread: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     let mut sig = 0;
     // SAFETY: `set` is a valid signal set and `sig` is writable.
     unsafe { libc::sigwait(&set, &mut sig) };
     eprintln!("foldz: signal {sig}, stopping");
+    // The node leaves the registry before its flows go.
+    let _ = stop.send(());
+    let _ = served.join();
     ops.set_engine_started(false);
     // The guard is dropped before stop: the listeners lock the slot too,
     // and would wait for stop to return.
