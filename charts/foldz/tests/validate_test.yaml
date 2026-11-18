@@ -16,12 +16,47 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "witness.enabled: foldz does not implement replication yet"
-  - it: refuses NMOS while the chart does not render its settings
+  - it: refuses a seed and a seed name together
     set:
-      nmos.enabled: true
+      nmos.seed: 9d0e8f7a-6b5c-4d3e-8f1a-2b3c4d5e6f70
+      nmos.seedName: audio/foldz
     asserts:
       - failedTemplate:
-          errorPattern: "nmos.enabled: the chart does not render foldz's NMOS settings yet"
+          errorPattern: "nmos.seed, nmos.seedName: mutually exclusive"
+  - it: refuses TLS on the NMOS listener with NMOS enabled, which advertises plain HTTP
+    set:
+      nmos.enabled: true
+      tls.mode: existingSecret
+      tls.existingSecret: foldz-tls
+      tls.listeners: [nmos]
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.listeners: nmos is refused with nmos.enabled"
+  - it: refuses a registry URL the registration client cannot use
+    set:
+      nmos.registry.url: https://registry.example.org
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/registry/url"
+  - it: refuses a registry URL with a path, which the client appends itself
+    set:
+      nmos.registry.url: http://registry.example.org/x-nmos/registration/v1.3
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/registry/url"
+  - it: refuses a domain id that is no lowercase UUID
+    set:
+      mxl.domains:
+        - { name: a, hostPath: /dev/shm/mxl/a, id: 5E0C2A1B-7D3F-4E9A-8B6C-1F2E3D4C5B6A }
+    asserts:
+      - failedTemplate:
+          errorPattern: "/mxl/domains/0/id"
+  - it: refuses a heartbeat outside 1 to 60 seconds
+    set:
+      nmos.heartbeatS: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/heartbeatS"
   - it: refuses replication settings the chart does not have
     set:
       replica.voters: 3

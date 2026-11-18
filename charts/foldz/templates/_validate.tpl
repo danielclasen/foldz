@@ -13,8 +13,11 @@ setting that has no effect.
 {{- fail "witness.enabled: foldz does not implement replication yet, so there is no witness to run" }}
 {{- end }}
 
-{{- if $v.nmos.enabled }}
-{{- fail "nmos.enabled: the chart does not render foldz's NMOS settings yet" }}
+{{- if and $v.nmos.seed $v.nmos.seedName }}
+{{- fail "nmos.seed, nmos.seedName: mutually exclusive" }}
+{{- end }}
+{{- if and $v.nmos.enabled (include "foldz.tlsOn" (dict "ctx" . "listener" "nmos")) }}
+{{- fail "tls.listeners: nmos is refused with nmos.enabled; the Node advertises its APIs over plain HTTP" }}
 {{- end }}
 
 {{- $ports := dict "service.port" $v.service.port "nmos.port" $v.nmos.port "ops.port" $v.ops.port }}

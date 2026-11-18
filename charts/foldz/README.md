@@ -45,11 +45,15 @@ config:
 | `replicas` | `1` | any other value fails rendering: replication is not implemented |
 | `witness.enabled` | `false` | `true` fails rendering, for the same reason |
 | `mxl.libraryPath` | `/opt/mxl/lib/libmxl.so` | |
-| `mxl.domains[]` | `{name: a, hostPath: /dev/shm/mxl/a}` | `name` plus `hostPath` or `volume`; mounted at `/mxl/<name>` |
+| `mxl.domains[]` | `{name: a, hostPath: /dev/shm/mxl/a}` | `name` plus `hostPath` or `volume`; mounted at `/mxl/<name>`; `id`, the domain's MXL UUID |
 | `engine.sampleRate`, `.blockSize`, `.readerMarginSamples` | `48000`, `48`, `576` | `maxCatchupBlocks`, `pruneAfterBlocks`, `rampSamples` are accepted too |
 | `rt.enabled`, `.priority`, `.rtCpu` | `true`, `70`, `auto` | |
-| `nmos.enabled` | `false` | `true` fails rendering: the chart does not render foldz's NMOS settings yet |
+| `nmos.enabled` | `false` | registers the inputs and outputs and takes IS-05 connections ([NMOS](#nmos)) |
 | `nmos.port`, `.service.type` | `8081`, `ClusterIP` | the NMOS listener is bound either way |
+| `nmos.seed`, `.seedName` | `""`, `""` | the resource ids' seed; both empty renders `seedName` `<namespace>/<release>` |
+| `nmos.advertiseHost`, `.advertisePort` | `""`, `0` | `""` renders the NMOS Service's fully qualified name; `0` advertises `nmos.port` |
+| `nmos.registry.url`, `.dnsSdDomain` | `""`, `""` | `http://host[:port]`; empty browses DNS-SD |
+| `nmos.heartbeatS`, `.asset.manufacturer` | `5`, `danielclasen` | |
 | `service.type`, `.port` | `ClusterIP`, `8080` | the API listener and its Service |
 | `ops.port` | `9090` | `/healthz`, `/readyz`, `/metrics` ([API](../../README.md#api)), always ClusterIP |
 | `auth.mode` | `none` | `none`, `token` or `proxy` |
@@ -80,6 +84,18 @@ source, for example `csi` or `persistentVolumeClaim`. The pod's user and
 group, `podSecurityContext.runAsUser`, `runAsGroup` and `fsGroup`, have to be
 able to read and write the domain, which with `hostPath` the chart does not
 change.
+
+## NMOS
+
+With `nmos.enabled` the config carries the `nmos` settings of the binary's
+[NMOS](../../README.md#nmos) section. Controllers reach the node at the NMOS
+Service, `<release>-nmos.<namespace>.svc.<clusterDomain>` unless
+`nmos.advertiseHost` names another host. The resource ids derive from
+`<namespace>/<release>` unless `nmos.seed` or `nmos.seedName` is set, so a
+reinstall under the same name keeps them. Each domain needs its MXL id: the
+`id` of a `domain_def.json` in the domain, or `mxl.domains[].id`; foldz
+does not start without one. TLS on the NMOS listener is refused with NMOS
+enabled, since the Node advertises plain HTTP.
 
 ## Real-time scheduling
 

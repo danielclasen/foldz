@@ -70,6 +70,11 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- list .name (printf "%s.%s" .name $ns) (printf "%s.%s.svc" .name $ns) (printf "%s.%s.svc.%s" .name $ns .ctx.Values.clusterDomain) | toJson }}
 {{- end }}
 
+{{/* The NMOS Service's fully qualified name, unless nmos.advertiseHost is set. */}}
+{{- define "foldz.nmosHost" -}}
+{{- .Values.nmos.advertiseHost | default (printf "%s.%s.svc.%s" (include "foldz.nmosService" .) .Release.Namespace .Values.clusterDomain) }}
+{{- end }}
+
 {{- define "foldz.tlsOn" -}}
 {{- if and (ne .ctx.Values.tls.mode "none") (has .listener .ctx.Values.tls.listeners) }}true{{ end }}
 {{- end }}
@@ -116,11 +121,24 @@ mounted files, never as values.
 {{- end }}
 {{- $origins = concat $origins $v.api.allowedOrigins }}
 
-{{- $nmos := dict "enabled" $v.nmos.enabled }}
+{{- $n := $v.nmos }}
+{{- $nmos := dict "enabled" $n.enabled "advertiseHost" (include "foldz.nmosHost" .) "heartbeatS" (int $n.heartbeatS) "asset" (dict "manufacturer" $n.asset.manufacturer) "registry" (dict "url" $n.registry.url "dnsSdDomain" $n.registry.dnsSdDomain) }}
+{{- if $n.seed }}
+{{- $_ := set $nmos "seed" $n.seed }}
+{{- else }}
+{{- $_ := set $nmos "seedName" ($n.seedName | default (printf "%s/%s" .Release.Namespace .Release.Name)) }}
+{{- end }}
+{{- if $n.advertisePort }}
+{{- $_ := set $nmos "advertisePort" (int $n.advertisePort) }}
+{{- end }}
 
 {{- $domains := list }}
 {{- range $v.mxl.domains }}
-{{- $domains = append $domains (dict "name" .name "path" (printf "/mxl/%s" .name)) }}
+{{- $d := dict "name" .name "path" (printf "/mxl/%s" .name) }}
+{{- if .id }}
+{{- $_ := set $d "id" .id }}
+{{- end }}
+{{- $domains = append $domains $d }}
 {{- end }}
 
 {{- $config := dict

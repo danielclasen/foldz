@@ -31,3 +31,7 @@ tests:
     values: [../ci/base.yaml, ../ci/proxy-values.yaml]
     asserts:
       - matchSnapshot: {}
+  - it: renders NMOS on with a configured registry and the NMOS port open to one namespace
+    values: [../ci/base.yaml, ../ci/nmos-values.yaml]
+    asserts:
+      - matchSnapshot: {}

@@ -1,3 +1,398 @@
+renders NMOS on with a configured registry and the NMOS port open to one namespace:
+  1: |
+    apiVersion: v1
+    data:
+      config.json: |
+        {
+          "api": {
+            "allowedHosts": [
+              "r-foldz",
+              "r-foldz.audio",
+              "r-foldz.audio.svc",
+              "r-foldz.audio.svc.cluster.local"
+            ],
+            "allowedOrigins": []
+          },
+          "auth": {
+            "mode": "none"
+          },
+          "domains": [
+            {
+              "id": "5e0c2a1b-7d3f-4e9a-8b6c-1f2e3d4c5b6a",
+              "name": "a",
+              "path": "/mxl/a"
+            }
+          ],
+          "engine": {
+            "blockSize": 48,
+            "readerMarginSamples": 576,
+            "sampleRate": 48000
+          },
+          "inputs": [
+            {
+              "channels": 8,
+              "flow": "7a1e4c9b-3d2f-4b6a-8e0c-5f7d9b1a3c55",
+              "layout": [
+                "L",
+                "R",
+                "C",
+                "LFE",
+                "Ls",
+                "Rs",
+                "-",
+                "-"
+              ],
+              "name": "main"
+            }
+          ],
+          "listeners": {
+            "api": {
+              "bind": "0.0.0.0",
+              "port": 8080
+            },
+            "nmos": {
+              "bind": "0.0.0.0",
+              "port": 8081
+            },
+            "ops": {
+              "bind": "0.0.0.0",
+              "port": 9090
+            }
+          },
+          "mxl": {
+            "libraryPath": "/opt/mxl/lib/libmxl.so"
+          },
+          "nmos": {
+            "advertiseHost": "r-foldz-nmos.audio.svc.cluster.local",
+            "asset": {
+              "manufacturer": "danielclasen"
+            },
+            "enabled": true,
+            "heartbeatS": 5,
+            "registry": {
+              "dnsSdDomain": "",
+              "url": "http://nmos-registry.nmos.svc:8010"
+            },
+            "seedName": "audio/r"
+          },
+          "outputs": [
+            {
+              "flows": [
+                "0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11"
+              ],
+              "gainDb": 0,
+              "label": "Programme stereo",
+              "layout": [
+                "L",
+                "R"
+              ],
+              "lfe": "drop",
+              "name": "stereo",
+              "preset": "bs775-3_2-to-2_0"
+            }
+          ],
+          "rt": {
+            "enabled": true,
+            "priority": 70,
+            "rtCpu": "auto"
+          }
+        }
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  2: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ingress:
+        - ports:
+            - port: api
+              protocol: TCP
+            - port: ops
+              protocol: TCP
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: nmos
+          ports:
+            - port: nmos
+              protocol: TCP
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      policyTypes:
+        - Ingress
+  3: |
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+  4: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+  5: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      ports:
+        - name: http
+          port: 8080
+          protocol: TCP
+          targetPort: api
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  6: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-nmos
+    spec:
+      ports:
+        - name: http-nmos
+          port: 8081
+          protocol: TCP
+          targetPort: nmos
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  7: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-ops
+    spec:
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+      type: ClusterIP
+  8: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz-headless
+    spec:
+      clusterIP: None
+      ports:
+        - name: http-ops
+          port: 9090
+          protocol: TCP
+          targetPort: ops
+      publishNotReadyAddresses: true
+      selector:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/name: foldz
+  9: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: audio
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: foldz
+        app.kubernetes.io/version: 1.2.3
+        helm.sh/chart: foldz-1.2.3
+      name: r-foldz
+    spec:
+      podManagementPolicy: Parallel
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: audio
+          app.kubernetes.io/instance: r
+          app.kubernetes.io/name: foldz
+      serviceName: r-foldz-headless
+      template:
+        metadata:
+          annotations:
+            checksum/config: e93adca08e4523f6ce553a958126e9d5964e2a20316ff77d4123c6f32adb1ad9
+          labels:
+            app.kubernetes.io/component: audio
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: foldz
+            app.kubernetes.io/version: 1.2.3
+            helm.sh/chart: foldz-1.2.3
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /etc/foldz/config.json
+              env:
+                - name: SAMPLEZ_CPU_REQUEST_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: requests.cpu
+                - name: SAMPLEZ_CPU_LIMIT_MILLICORES
+                  valueFrom:
+                    resourceFieldRef:
+                      containerName: foldz
+                      divisor: 1m
+                      resource: limits.cpu
+              image: ghcr.io/danielclasen/foldz:1.2.3
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 5
+              name: foldz
+              ports:
+                - containerPort: 8080
+                  name: api
+                  protocol: TCP
+                - containerPort: 8081
+                  name: nmos
+                  protocol: TCP
+                - containerPort: 9090
+                  name: ops
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 2
+                httpGet:
+                  path: /readyz
+                  port: ops
+                periodSeconds: 2
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 512Mi
+                requests:
+                  cpu: "2"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: true
+                capabilities:
+                  add:
+                    - SYS_NICE
+                    - IPC_LOCK
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: ops
+                periodSeconds: 2
+              volumeMounts:
+                - mountPath: /etc/foldz
+                  name: config
+                  readOnly: true
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /mxl/a
+                  name: mxl-0
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: r-foldz
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - configMap:
+                name: r-foldz
+              name: config
+            - emptyDir: {}
+              name: tmp
+            - hostPath:
+                path: /dev/shm/mxl/a
+                type: Directory
+              name: mxl-0
+      updateStrategy:
+        type: RollingUpdate
 renders TLS served by the product from a cert-manager Certificate:
   1: |
     apiVersion: cert-manager.io/v1
@@ -94,7 +489,17 @@ renders TLS served by the product from a cert-manager Certificate:
             "libraryPath": "/opt/mxl/lib/libmxl.so"
           },
           "nmos": {
-            "enabled": false
+            "advertiseHost": "r-foldz-nmos.audio.svc.cluster.local",
+            "asset": {
+              "manufacturer": "danielclasen"
+            },
+            "enabled": false,
+            "heartbeatS": 5,
+            "registry": {
+              "dnsSdDomain": "",
+              "url": ""
+            },
+            "seedName": "audio/r"
           },
           "outputs": [
             {
@@ -277,7 +682,7 @@ renders TLS served by the product from a cert-manager Certificate:
       template:
         metadata:
           annotations:
-            checksum/config: 0af3db300100c04c894e3bd76136dda9f3bc9f210c8473ccdf8050851c99ec04
+            checksum/config: 9fd9eb01cdd8d8dcb7f07ad85d76393c6196b8907bdfbfbafd7c08dab59a14e3
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -481,7 +886,17 @@ renders TLS served by the product from an existing Secret:
             "libraryPath": "/opt/mxl/lib/libmxl.so"
           },
           "nmos": {
-            "enabled": false
+            "advertiseHost": "r-foldz-nmos.audio.svc.cluster.local",
+            "asset": {
+              "manufacturer": "danielclasen"
+            },
+            "enabled": false,
+            "heartbeatS": 5,
+            "registry": {
+              "dnsSdDomain": "",
+              "url": ""
+            },
+            "seedName": "audio/r"
           },
           "outputs": [
             {
@@ -664,7 +1079,7 @@ renders TLS served by the product from an existing Secret:
       template:
         metadata:
           annotations:
-            checksum/config: 627b94ee18f3fb10871b6f33c16965f18edaa2168c11505dc4b745d2d64b2217
+            checksum/config: a992aa431a9565a3277765cdc5bc6cb372a249a9f1bb83e4f6e8b8aa8408ebee
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -852,7 +1267,17 @@ renders auth none, plain HTTP, in-cluster only:
             "libraryPath": "/opt/mxl/lib/libmxl.so"
           },
           "nmos": {
-            "enabled": false
+            "advertiseHost": "r-foldz-nmos.audio.svc.cluster.local",
+            "asset": {
+              "manufacturer": "danielclasen"
+            },
+            "enabled": false,
+            "heartbeatS": 5,
+            "registry": {
+              "dnsSdDomain": "",
+              "url": ""
+            },
+            "seedName": "audio/r"
           },
           "outputs": [
             {
@@ -1035,7 +1460,7 @@ renders auth none, plain HTTP, in-cluster only:
       template:
         metadata:
           annotations:
-            checksum/config: 143489907854ba270c0df83ec833cb17a0a8e76ae066b57ded2521dfea7c4f87
+            checksum/config: b0d45e0e9e1065df7042110698bfbb078f5ab93980f9517f1e4279702bdeb08a
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -1209,7 +1634,17 @@ renders plain HTTP behind a TLS-terminating ingress with token auth:
             "libraryPath": "/opt/mxl/lib/libmxl.so"
           },
           "nmos": {
-            "enabled": false
+            "advertiseHost": "r-foldz-nmos.audio.svc.cluster.local",
+            "asset": {
+              "manufacturer": "danielclasen"
+            },
+            "enabled": false,
+            "heartbeatS": 5,
+            "registry": {
+              "dnsSdDomain": "",
+              "url": ""
+            },
+            "seedName": "audio/r"
           },
           "outputs": [
             {
@@ -1421,7 +1856,7 @@ renders plain HTTP behind a TLS-terminating ingress with token auth:
       template:
         metadata:
           annotations:
-            checksum/config: 02d4404352aef5bc145eb765c4ea59104852d4d35ac1d63d1b95f86b2ca40dd9
+            checksum/config: bd4fe1bc74cf2fb03880c651d14bb93bdf4d2d4ea23bded4cbc79387aa347387
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
@@ -1609,7 +2044,17 @@ renders the oauth2-proxy sidecar, a CSI domain and the NetworkPolicy:
             "libraryPath": "/opt/mxl/lib/libmxl.so"
           },
           "nmos": {
-            "enabled": false
+            "advertiseHost": "r-foldz-nmos.audio.svc.cluster.local",
+            "asset": {
+              "manufacturer": "danielclasen"
+            },
+            "enabled": false,
+            "heartbeatS": 5,
+            "registry": {
+              "dnsSdDomain": "",
+              "url": ""
+            },
+            "seedName": "audio/r"
           },
           "outputs": [
             {
@@ -1851,7 +2296,7 @@ renders the oauth2-proxy sidecar, a CSI domain and the NetworkPolicy:
       template:
         metadata:
           annotations:
-            checksum/config: fccc0e1ae74e2cf9a7e8d5c4ed8ea9feb193aab21bae54cf7636c6f93184fa73
+            checksum/config: d70c6152c77af6ce94234edf19728ae03230e5f3adb1019ab92a894f69f36414
           labels:
             app.kubernetes.io/component: audio
             app.kubernetes.io/instance: r
