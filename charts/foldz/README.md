@@ -51,7 +51,7 @@ config:
 | `nmos.enabled` | `false` | registers the inputs and outputs and takes IS-05 connections ([NMOS](#nmos)) |
 | `nmos.port`, `.service.type` | `8081`, `ClusterIP` | the NMOS listener is bound either way |
 | `nmos.seed`, `.seedName` | `""`, `""` | the resource ids' seed; both empty renders `seedName` `<namespace>/<release>` |
-| `nmos.advertiseHost`, `.advertisePort` | `""`, `0` | `""` renders the NMOS Service's fully qualified name; `0` advertises `nmos.port` |
+| `nmos.advertiseHost`, `.advertisePort` | `""`, `0` | `""` renders the NMOS Service's fully qualified name; `0` advertises `nmos.port`; another port needs `advertiseHost` |
 | `nmos.registry.url`, `.dnsSdDomain` | `""`, `""` | `http://host[:port]`; empty browses DNS-SD |
 | `nmos.heartbeatS`, `.asset.manufacturer` | `5`, `danielclasen` | |
 | `service.type`, `.port` | `ClusterIP`, `8080` | the API listener and its Service |
@@ -92,10 +92,15 @@ With `nmos.enabled` the config carries the `nmos` settings of the binary's
 Service, `<release>-nmos.<namespace>.svc.<clusterDomain>` unless
 `nmos.advertiseHost` names another host. The resource ids derive from
 `<namespace>/<release>` unless `nmos.seed` or `nmos.seedName` is set, so a
-reinstall under the same name keeps them. Each domain needs its MXL id: the
+reinstall under the same name keeps them. That name is the same in every
+cluster that uses it: clusters sharing a registry need `nmos.seed` or
+`nmos.seedName` set per cluster, or their nodes register the same ids. Each domain needs its MXL id: the
 `id` of a `domain_def.json` in the domain, or `mxl.domains[].id`; foldz
-does not start without one. TLS on the NMOS listener is refused with NMOS
-enabled, since the Node advertises plain HTTP.
+does not start without one; the schema takes only MXL UUIDs there. TLS on
+the NMOS listener is refused with NMOS enabled, since the Node advertises
+plain HTTP. On SIGTERM foldz waits up to 5 s for the registry to answer
+the Node's DELETE before it releases its writers, so
+`terminationGracePeriodSeconds` below 10 is refused with NMOS enabled.
 
 ## Real-time scheduling
 

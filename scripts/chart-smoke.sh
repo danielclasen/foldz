@@ -165,12 +165,12 @@ check_nmos() {
   # Controllers reach the node at the NMOS Service.
   curl -fs "$base/x-nmos/node/v1.3/self" | python3 -c '
 import json, sys
-host = sys.argv[1]
+host, port = sys.argv[1], int(sys.argv[2])
 n = json.load(sys.stdin)
-assert [e["host"] for e in n["api"]["endpoints"]] == [host], n["api"]
-' "foldz-nmos.$ns.svc.cluster.local" \
-    || { echo "FAIL the Node does not advertise the NMOS Service" >&2; return 1; }
-  echo "ok the Node advertises foldz-nmos.$ns.svc.cluster.local"
+assert [(e["host"], e["port"]) for e in n["api"]["endpoints"]] == [(host, port)], n["api"]
+' "foldz-nmos.$ns.svc.cluster.local" 8081 \
+    || { echo "FAIL the Node does not advertise the NMOS Service and its port" >&2; return 1; }
+  echo "ok the Node advertises foldz-nmos.$ns.svc.cluster.local:8081"
   sender=$(curl -fs "$base/x-nmos/node/v1.3/senders/" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)

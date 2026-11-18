@@ -16,6 +16,12 @@ setting that has no effect.
 {{- if and $v.nmos.seed $v.nmos.seedName }}
 {{- fail "nmos.seed, nmos.seedName: mutually exclusive" }}
 {{- end }}
+{{- if and $v.nmos.advertisePort (not $v.nmos.advertiseHost) }}
+{{- fail (printf "nmos.advertisePort: %v needs nmos.advertiseHost; the NMOS Service, advertised by default, serves nmos.port" $v.nmos.advertisePort) }}
+{{- end }}
+{{- if and $v.nmos.enabled (lt (int $v.terminationGracePeriodSeconds) 10) }}
+{{- fail (printf "terminationGracePeriodSeconds: %v is below 10 with nmos.enabled; foldz waits up to 5 s for the registry's DELETE before it releases its writers, and a SIGKILL before that leaves their flows in the domain" $v.terminationGracePeriodSeconds) }}
+{{- end }}
 {{- if and $v.nmos.enabled (include "foldz.tlsOn" (dict "ctx" . "listener" "nmos")) }}
 {{- fail "tls.listeners: nmos is refused with nmos.enabled; the Node advertises its APIs over plain HTTP" }}
 {{- end }}

@@ -57,11 +57,14 @@ nmos:
   enabled: false
   port: 8081
   # The resource ids derive from seed (a UUID) or seedName; "" for both
-  # renders seedName <namespace>/<release>.
+  # renders seedName <namespace>/<release>, which is the same in every
+  # cluster with that namespace and release: set one per cluster when
+  # clusters share a registry.
   seed: ""
   seedName: ""
   # Where controllers reach the NMOS listener; "" renders the NMOS
-  # Service's fully qualified name. advertisePort 0 advertises nmos.port.
+  # Service's fully qualified name. advertisePort 0 advertises nmos.port;
+  # another port needs advertiseHost, such as a NodePort's node address.
   advertiseHost: ""
   advertisePort: 0
   registry:
@@ -186,6 +189,8 @@ resources:
     cpu: "2"
     memory: 512Mi
 
+# At least 10 with nmos.enabled: SIGTERM waits up to 5 s for the
+# registry before the writers are released.
 terminationGracePeriodSeconds: 30
 priorityClassName: ""
 podAnnotations: {}

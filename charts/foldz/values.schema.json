@@ -17,7 +17,12 @@
     "stringMap": { "type": "object", "additionalProperties": { "type": "string" } },
     "uuidOrEmpty": {
       "type": "string",
-      "pattern": "^(|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+      "pattern": "^(|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+      "not": { "const": "00000000-0000-0000-0000-000000000000" }
+    },
+    "mxlUuidOrEmpty": {
+      "type": "string",
+      "pattern": "^(|[0-9a-f]{8}-[0-9a-f]{4}-[1-9a-f][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
     },
     "image": {
       "type": "object",
@@ -63,7 +68,7 @@
               "name": { "type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*$" },
               "hostPath": { "type": "string", "pattern": "^/" },
               "volume": { "type": "object" },
-              "id": { "$ref": "#/definitions/uuidOrEmpty" }
+              "id": { "$ref": "#/definitions/mxlUuidOrEmpty" }
             }
           }
         }
