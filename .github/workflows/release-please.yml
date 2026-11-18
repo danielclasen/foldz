@@ -190,6 +190,7 @@ jobs:
       # Workflow logs are no evidence the published artefact is right.
       - name: Pull the published chart and render it
         run: |
+          mkdir -p pulled
           helm pull "$CHARTS/foldz" --version "$VERSION" --destination pulled
           helm template foldz "pulled/foldz-$VERSION.tgz" \
             -f charts/foldz/ci/base.yaml > rendered.yaml
