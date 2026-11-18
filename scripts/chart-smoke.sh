@@ -2,8 +2,9 @@
 # Installs the chart with a locally built image into a throwaway kind
 # cluster and checks the pod comes up, the API authenticates and the output
 # flow is deleted on uninstall, once with RT off and once with RT on and
-# rtCpu none. Token auth, a hostPath MXL domain and the config of
-# ci/base.yaml.
+# rtCpu none, then once with NMOS on: the Node API answers through the
+# NMOS Service and an IS-05 activation releases and recreates the output
+# flow. Token auth, a hostPath MXL domain and the config of ci/base.yaml.
 # Needs docker, kind, kubectl, helm and curl on PATH.
 # With KIND_CLUSTER_EXISTS=1 it uses the cluster KIND_CLUSTER names,
 # created by the caller from the node image below, and leaves it in place.
@@ -20,6 +21,8 @@ domain=/dev/shm/mxl/a
 flow=0f3a6c2e-5b1d-4e8a-9c7f-2d4b6a8e0c11
 api_port=18080
 ops_port=19090
+nmos_port=18081
+mxl_domain_id=5e0c2a1b-7d3f-4e9a-8b6c-1f2e3d4c5b6a
 
 cd "$(dirname "$0")/.."
 
@@ -135,5 +138,89 @@ check_install() {
   echo "ok output flow $flow is gone after uninstall"
 }
 
+# check_nmos: installs the chart with NMOS on and no registry, checks the
+# Node API, takes one IS-05 sender activation each way and uninstalls.
+check_nmos() {
+  echo "== helm install with nmos.enabled=true"
+  helm install foldz "$chart" --namespace "$ns" --wait --timeout 3m \
+    -f "$chart/ci/base.yaml" \
+    --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
+    --set image.pullPolicy=Never \
+    --set rt.enabled=false --set rt.rtCpu=none \
+    --set resources.requests.cpu=500m --set resources.limits.cpu=500m \
+    --set auth.mode=token --set auth.token.existingSecret=foldz-token \
+    --set "mxl.domains[0].name=a" --set "mxl.domains[0].hostPath=$domain" \
+    --set "mxl.domains[0].id=$mxl_domain_id" --set nmos.enabled=true
+  kubectl -n "$ns" wait --for=condition=Ready pod/foldz-0 --timeout 60s
+
+  forwards=()
+  kubectl -n "$ns" port-forward svc/foldz-nmos "$nmos_port:8081" >"$work/nmos.log" 2>&1 &
+  forwards+=($!)
+  local base=http://127.0.0.1:$nmos_port
+  for _ in $(seq 50); do
+    curl -s -o /dev/null "$base/x-nmos/" && break
+    sleep 0.2
+  done
+  local sender receiver
+  # Controllers reach the node at the NMOS Service.
+  curl -fs "$base/x-nmos/node/v1.3/self" | python3 -c '
+import json, sys
+host, port = sys.argv[1], int(sys.argv[2])
+n = json.load(sys.stdin)
+assert [(e["host"], e["port"]) for e in n["api"]["endpoints"]] == [(host, port)], n["api"]
+' "foldz-nmos.$ns.svc.cluster.local" 8081 \
+    || { echo "FAIL the Node does not advertise the NMOS Service and its port" >&2; return 1; }
+  echo "ok the Node advertises foldz-nmos.$ns.svc.cluster.local:8081"
+  sender=$(curl -fs "$base/x-nmos/node/v1.3/senders/" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+assert len(s) == 1 and s[0]["transport"] == "urn:x-nmos:transport:mxl", s
+print(s[0]["id"])')
+  receiver=$(curl -fs "$base/x-nmos/node/v1.3/receivers/" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assert len(r) == 1 and r[0]["transport"] == "urn:x-nmos:transport:mxl", r
+print(r[0]["id"])')
+  echo "ok one MXL sender ($sender) and one MXL receiver ($receiver)"
+  curl -fs "$base/x-nmos/connection/v1.2/single/receivers/$receiver/active" | python3 -c '
+import json, sys
+a = json.load(sys.stdin)
+assert a["transport_params"][0]["mxl_domain_id"] == sys.argv[1], a
+' "$mxl_domain_id" \
+    || { echo "FAIL the receiver's domain is not $mxl_domain_id" >&2; return 1; }
+  echo "ok the receiver's mxl_domain_id is the configured domain id"
+
+  # activate <master_enable>: an immediate IS-05 activation of the sender.
+  activate() {
+    expect 200 "PATCH sender master_enable $1" -X PATCH -H 'Content-Type: application/json' \
+      -d "{\"master_enable\": $1, \"activation\": {\"mode\": \"activate_immediate\"}}" \
+      "$base/x-nmos/connection/v1.2/single/senders/$sender/staged"
+  }
+  # flow_is <present|absent>: waits up to 10 s for the output flow.
+  flow_is() {
+    for _ in $(seq 50); do
+      if docker exec "$node" test -e "$domain/$flow.mxl-flow"; then
+        [ "$1" = present ] && { echo "ok output flow $flow is $1"; return 0; }
+      else
+        [ "$1" = absent ] && { echo "ok output flow $flow is $1"; return 0; }
+      fi
+      sleep 0.2
+    done
+    echo "FAIL output flow $flow is not $1" >&2
+    return 1
+  }
+  flow_is present
+  activate false
+  flow_is absent
+  activate true
+  flow_is present
+
+  for pid in "${forwards[@]}"; do kill "$pid" 2>/dev/null || true; done
+  forwards=()
+  helm uninstall foldz --namespace "$ns" --wait --timeout 2m
+  kubectl -n "$ns" wait --for=delete pod/foldz-0 --timeout 60s
+}
+
 check_install false
 check_install true
+check_nmos

@@ -16,12 +16,78 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "witness.enabled: foldz does not implement replication yet"
-  - it: refuses NMOS while the chart does not render its settings
+  - it: refuses a seed and a seed name together
     set:
-      nmos.enabled: true
+      nmos.seed: 9d0e8f7a-6b5c-4d3e-8f1a-2b3c4d5e6f70
+      nmos.seedName: audio/foldz
     asserts:
       - failedTemplate:
-          errorPattern: "nmos.enabled: the chart does not render foldz's NMOS settings yet"
+          errorPattern: "nmos.seed, nmos.seedName: mutually exclusive"
+  - it: refuses TLS on the NMOS listener with NMOS enabled, which advertises plain HTTP
+    set:
+      nmos.enabled: true
+      tls.mode: existingSecret
+      tls.existingSecret: foldz-tls
+      tls.listeners: [nmos]
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.listeners: nmos is refused with nmos.enabled"
+  - it: refuses a registry URL the registration client cannot use
+    set:
+      nmos.registry.url: https://registry.example.org
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/registry/url"
+  - it: refuses a registry URL with a path, which the client appends itself
+    set:
+      nmos.registry.url: http://registry.example.org/x-nmos/registration/v1.3
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/registry/url"
+  - it: refuses a domain id that is no lowercase UUID
+    set:
+      mxl.domains:
+        - { name: a, hostPath: /dev/shm/mxl/a, id: 5E0C2A1B-7D3F-4E9A-8B6C-1F2E3D4C5B6A }
+    asserts:
+      - failedTemplate:
+          errorPattern: "/mxl/domains/0/id"
+  - it: refuses a domain id that is a lowercase UUID but no MXL UUID
+    set:
+      mxl.domains:
+        - { name: a, hostPath: /dev/shm/mxl/a, id: 5e0c2a1b-7d3f-0e9a-8b6c-1f2e3d4c5b6a }
+    asserts:
+      - failedTemplate:
+          errorPattern: "/mxl/domains/0/id"
+  - it: refuses the nil UUID as the seed, which the binary reserves
+    set:
+      nmos.seed: 00000000-0000-0000-0000-000000000000
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/seed"
+  - it: refuses an advertised port with the default advertised host, whose Service serves nmos.port
+    set:
+      nmos.advertisePort: 30081
+    asserts:
+      - failedTemplate:
+          errorPattern: "nmos.advertisePort: 30081 needs nmos.advertiseHost"
+  - it: refuses a grace period shorter than the registry wait with NMOS enabled
+    set:
+      nmos.enabled: true
+      terminationGracePeriodSeconds: 5
+    asserts:
+      - failedTemplate:
+          errorPattern: "terminationGracePeriodSeconds: 5 is below 10 with nmos.enabled"
+  - it: accepts a short grace period with NMOS disabled
+    set:
+      terminationGracePeriodSeconds: 5
+    asserts:
+      - notFailedTemplate: {}
+  - it: refuses a heartbeat outside 1 to 60 seconds
+    set:
+      nmos.heartbeatS: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/heartbeatS"
   - it: refuses replication settings the chart does not have
     set:
       replica.voters: 3

@@ -29,7 +29,8 @@ mxl:
   # MXL domains, each mounted at /mxl/<name> and rendered into the config's
   # domains. Each entry takes either hostPath (a directory on the node) or
   # volume (any pod volume source except hostPath, e.g. csi or
-  # persistentVolumeClaim).
+  # persistentVolumeClaim). id is the domain's MXL UUID, which NMOS needs
+  # unless the domain holds a domain_def.json.
   domains:
     - name: a
       hostPath: /dev/shm/mxl/a
@@ -51,10 +52,30 @@ rt:
   rtCpu: auto
 
 nmos:
-  # The chart does not render foldz's NMOS settings yet: true fails
-  # rendering. The listener on nmos.port is bound either way.
+  # Registers the inputs and outputs as NMOS receivers and senders and
+  # takes IS-05 connections. The listener on nmos.port is bound either way.
   enabled: false
   port: 8081
+  # The resource ids derive from seed (a UUID) or seedName; "" for both
+  # renders seedName <namespace>/<release>, which is the same in every
+  # cluster with that namespace and release: set one per cluster when
+  # clusters share a registry.
+  seed: ""
+  seedName: ""
+  # Where controllers reach the NMOS listener; "" renders the NMOS
+  # Service's fully qualified name. advertisePort 0 advertises nmos.port;
+  # another port needs advertiseHost, such as a NodePort's node address.
+  advertiseHost: ""
+  advertisePort: 0
+  registry:
+    # http://host[:port] of a Registration API; "" browses DNS-SD.
+    url: ""
+    # The unicast DNS-SD domain browsed; "" browses the pod's search
+    # domains, then multicast DNS-SD.
+    dnsSdDomain: ""
+  heartbeatS: 5
+  asset:
+    manufacturer: danielclasen
   service:
     type: ClusterIP
     annotations: {}
@@ -168,6 +189,8 @@ resources:
     cpu: "2"
     memory: 512Mi
 
+# At least 10 with nmos.enabled: SIGTERM waits up to 5 s for the
+# registry before the writers are released.
 terminationGracePeriodSeconds: 30
 priorityClassName: ""
 podAnnotations: {}

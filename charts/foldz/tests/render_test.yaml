@@ -113,6 +113,40 @@ tests:
           path: data["config.json"]
           pattern: '"name": "b",\s+"path": "/mxl/b"'
 
+  - it: renders the NMOS settings with a seed name, host and domain id the binary needs
+    set:
+      nmos.enabled: true
+      mxl.domains:
+        - { name: a, hostPath: /dev/shm/mxl/a, id: 5e0c2a1b-7d3f-4e9a-8b6c-1f2e3d4c5b6a }
+    template: configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"id": "5e0c2a1b-7d3f-4e9a-8b6c-1f2e3d4c5b6a",\s+"name": "a",\s+"path": "/mxl/a"'
+      # The ids derive from <namespace>/<release>, so a reinstall keeps them;
+      # controllers reach the node at the NMOS Service.
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"nmos": \{\s+"advertiseHost": "r-foldz-nmos.audio.svc.cluster.local",\s+"asset": \{\s+"manufacturer": "danielclasen"\s+\},\s+"enabled": true,\s+"heartbeatS": 5,\s+"registry": \{\s+"dnsSdDomain": "",\s+"url": ""\s+\},\s+"seedName": "audio/r"\s+\}'
+  - it: renders the NMOS settings given
+    set:
+      nmos.enabled: true
+      nmos.seed: 9d0e8f7a-6b5c-4d3e-8f1a-2b3c4d5e6f70
+      nmos.advertiseHost: foldz.example.org
+      nmos.advertisePort: 18081
+      nmos.registry.url: http://registry.example.org:8010
+      nmos.registry.dnsSdDomain: example.org
+      nmos.heartbeatS: 10
+      nmos.asset.manufacturer: example
+    template: configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"nmos": \{\s+"advertiseHost": "foldz.example.org",\s+"advertisePort": 18081,\s+"asset": \{\s+"manufacturer": "example"\s+\},\s+"enabled": true,\s+"heartbeatS": 10,\s+"registry": \{\s+"dnsSdDomain": "example.org",\s+"url": "http://registry.example.org:8010"\s+\},\s+"seed": "9d0e8f7a-6b5c-4d3e-8f1a-2b3c4d5e6f70"\s+\}'
+      - notMatchRegex:
+          path: data["config.json"]
+          pattern: seedName
+
   - it: binds every listener on all addresses and names the API Service in allowedHosts
     template: configmap.yaml
     asserts:

@@ -1,0 +1,17 @@
+# NMOS on: registered with a configured registry, the domain's MXL id from
+# the values, IS-05 open to one peer.
+nmos:
+  enabled: true
+  registry:
+    url: http://nmos-registry.nmos.svc:8010
+mxl:
+  domains:
+    - name: a
+      hostPath: /dev/shm/mxl/a
+      id: 5e0c2a1b-7d3f-4e9a-8b6c-1f2e3d4c5b6a
+networkPolicy:
+  enabled: true
+  nmosFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: nmos
