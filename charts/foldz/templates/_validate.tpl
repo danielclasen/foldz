@@ -14,7 +14,7 @@ setting that has no effect.
 {{- end }}
 
 {{- if $v.nmos.enabled }}
-{{- fail "nmos.enabled: foldz does not implement NMOS yet" }}
+{{- fail "nmos.enabled: the chart does not render foldz's NMOS settings yet" }}
 {{- end }}
 
 {{- $ports := dict "service.port" $v.service.port "nmos.port" $v.nmos.port "ops.port" $v.ops.port }}

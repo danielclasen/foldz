@@ -58,9 +58,14 @@ fn every_section_accepts_its_fields() {
         "seed": "9d0e8f7a-6b5c-4d3e-8f1a-2b3c4d5e6f70",
         "advertiseHost": "foldz.example",
         "advertisePort": 8081,
-        "registry": { "url": "http://registry:8010", "dnsSdDomain": "example" }
+        "registry": { "url": "http://registry:8010", "dnsSdDomain": "example" },
+        "asset": { "manufacturer": "example" },
+        "heartbeatS": 10
     });
-    v["domains"] = json!([{ "name": "a", "path": "/mxl/a" }, { "name": "b", "path": "/mxl/b" }]);
+    v["domains"] = json!([
+        { "name": "a", "path": "/mxl/a", "id": "5e0c2a1b-7d3f-4e9a-8b6c-1f2e3d4c5b6a" },
+        { "name": "b", "path": "/mxl/b" }
+    ]);
     v["inputs"][0]["domain"] = json!("b");
     v["outputs"][0]["domain"] = json!("a");
     v["outputs"][0]["input"] = json!("main");
@@ -71,12 +76,13 @@ fn every_section_accepts_its_fields() {
 
 #[test]
 fn unknown_fields_are_rejected_everywhere() {
-    let paths: [&[&str]; 9] = [
+    let paths: [&[&str]; 10] = [
         &[],
         &["domains", "0"],
         &["inputs", "0"],
         &["outputs", "0"],
         &["nmos"],
+        &["nmos", "asset"],
         &["mxl"],
         &["engine"],
         &["rt"],
@@ -84,7 +90,7 @@ fn unknown_fields_are_rejected_everywhere() {
     ];
     for path in paths {
         let mut v = base();
-        v["nmos"] = json!({});
+        v["nmos"] = json!({ "asset": {} });
         v["mxl"] = json!({});
         v["engine"] = json!({});
         v["rt"] = json!({});
@@ -395,7 +401,7 @@ fn errors_name_the_item_they_concern() {
 fn registry_url_and_dns_sd_domain_are_checked() {
     for ok in [
         "http://registry:8010",
-        "https://registry.example.com/x-nmos/registration/v1.3",
+        "http://registry.example.com",
         "http://10.0.0.1:80",
         "http://[fd00::1]:8010/",
         "http://registry.10a:8010",
@@ -426,10 +432,15 @@ fn registry_url_and_dns_sd_domain_are_checked() {
         "http://0x7f.0.0.1:8010",
         "http://registry.0x1F",
         "http://registry.0x",
+        // The registration client speaks plain HTTP and appends the API
+        // path.
+        "https://registry.example.com",
+        "http://registry.example.com/x-nmos/registration/v1.3",
+        "http://registry//",
     ] {
         let mut v = base();
         v["nmos"] = json!({ "registry": { "url": bad } });
-        assert_invalid(v, "nmos.registry.url", "not an http or https URL");
+        assert_invalid(v, "nmos.registry.url", "not an http://host[:port] URL");
     }
     for bad in ["exa mple.com", "-a.com", "a..com", ".", &"a".repeat(64)] {
         let mut v = base();
@@ -513,6 +524,56 @@ fn nmos_needs_identity_when_enabled() {
 }
 
 #[test]
+fn nmos_settings_are_checked() {
+    let enabled = || json!({ "enabled": true, "seedName": "ns/foldz", "advertiseHost": "h" });
+    for bad in [0, 61] {
+        let mut v = base();
+        v["nmos"] = json!({ "heartbeatS": bad });
+        assert_invalid(v, "nmos.heartbeatS", "1 to 60");
+    }
+    let mut v = base();
+    v["nmos"] = json!({ "asset": { "manufacturer": "" } });
+    assert_invalid(v, "nmos.asset.manufacturer", "empty");
+    let config = parse(base()).unwrap();
+    assert_eq!(config.nmos.asset.manufacturer, "danielclasen");
+    assert_eq!(config.nmos.heartbeat_s, 5);
+
+    // The advertised port defaults to the listener's, which has to be
+    // known before the listener is bound.
+    let mut v = base();
+    v["nmos"] = enabled();
+    v["listeners"] = json!({ "nmos": { "bind": "0.0.0.0", "port": 0 } });
+    assert_invalid(v.clone(), "nmos.advertisePort", "listeners.nmos.port is 0");
+    v["nmos"]["advertisePort"] = json!(8081);
+    parse(v).unwrap().validate().unwrap();
+
+    let mut v = base();
+    v["nmos"] = enabled();
+    v["listeners"] = json!({ "nmos": { "bind": "0.0.0.0", "port": 8081,
+                                       "tls": { "mode": "selfSigned", "sans": ["h"] } } });
+    assert_invalid(v, "listeners.nmos.tls", "plain HTTP");
+}
+
+#[test]
+fn domain_ids_are_uuids() {
+    let mut v = base();
+    v["domains"][0]["id"] = json!("not-a-uuid");
+    assert_invalid(v, "domains[0].id", "not a lowercase UUID");
+}
+
+#[test]
+fn the_nil_uuid_is_reserved() {
+    let nil = "00000000-0000-0000-0000-000000000000";
+    assert_eq!(foldz::config::UNCONNECTED_FLOW, nil);
+    let mut v = base();
+    v["inputs"][0]["flow"] = json!(nil);
+    assert_invalid(v, "inputs[0].flow", "reserved");
+    let mut v = base();
+    v["outputs"][0]["flows"] = json!([nil]);
+    assert_invalid(v, "outputs[0].flows[0]", "reserved");
+}
+
+#[test]
 fn inputs_and_outputs_are_required() {
     let mut v = base();
     v["outputs"] = json!([]);
@@ -592,8 +653,9 @@ fn engine_and_rt_sections_default_to_the_samplez_defaults() {
 }
 
 /// Two inputs, one without a flow, and three outputs: the engine matrix
-/// has a row per channel of the connected input and a column per output
-/// channel, and holds each output's fold in its own columns.
+/// has a row per input channel and a column per output channel, and holds
+/// each output's fold in its own columns. The input without a flow gets a
+/// slot on the nil flow, which foldz detaches at start.
 #[test]
 fn engine_matrix_places_each_fold_at_its_input_and_output() {
     let mut v = base();
@@ -627,7 +689,13 @@ fn engine_matrix_places_each_fold_at_its_input_and_output() {
         .iter()
         .map(|i| (i.name.as_str(), i.flow_id.as_str(), i.channels))
         .collect();
-    assert_eq!(inputs, [("main", IN_A, 8)]);
+    assert_eq!(
+        inputs,
+        [
+            ("spare", foldz::config::UNCONNECTED_FLOW, 2),
+            ("main", IN_A, 8)
+        ]
+    );
     let outputs: Vec<_> = e
         .outputs
         .iter()
@@ -651,18 +719,27 @@ fn engine_matrix_places_each_fold_at_its_input_and_output() {
     );
     assert_eq!(e.outputs[0].label, "stereo");
 
-    assert_eq!(e.matrix.len(), 8);
+    assert_eq!(e.matrix.len(), 10);
     assert!(e.matrix.iter().all(|row| row.len() == 5));
-    for (i, row) in e.matrix.iter().enumerate() {
+    // spare's rows: only the silent output reads it.
+    for (i, row) in e.matrix[..2].iter().enumerate() {
+        assert_eq!(&row[..2], [0.0, 0.0], "stereo from spare {i}");
+        for (j, gain) in row[2..4].iter().enumerate() {
+            assert_eq!(*gain, folds[1].matrix.gain(j, i), "silent {i} -> {j}");
+        }
+        assert_eq!(row[4], 0.0, "centre from spare {i}");
+    }
+    for (i, row) in e.matrix[2..].iter().enumerate() {
         for (j, gain) in row[..2].iter().enumerate() {
             assert_eq!(*gain, folds[0].matrix.gain(j, i), "stereo {i} -> {j}");
         }
-        assert_eq!(&row[2..4], [0.0, 0.0], "the unconnected input's output");
+        assert_eq!(&row[2..4], [0.0, 0.0], "silent from main {i}");
         assert_eq!(row[4], if i == 2 { 1.0 } else { 0.0 }, "centre from {i}");
     }
+    assert_eq!(&e.matrix[0][2..4], [1.0, 0.0], "select L from spare");
     // -6 dB on the BS.775-4 centre coefficient, as the fold computed it.
     let centre = foldz::presets::Preset::Bs775To2_0.table().rows[0][2];
-    assert_eq!(e.matrix[2][0], (centre * 10f64.powf(-6.0 / 20.0)) as f32);
+    assert_eq!(e.matrix[4][0], (centre * 10f64.powf(-6.0 / 20.0)) as f32);
 }
 
 #[test]
@@ -670,8 +747,7 @@ fn engine_refuses_what_this_build_does_not_implement() {
     let mut v = base();
     v["nmos"] = json!({ "enabled": true, "seedName": "x", "advertiseHost": "h" });
     let config = parse(v).unwrap();
-    let e = config.engine(&config.validate().unwrap()).unwrap_err();
-    assert_eq!(e.at, "nmos.enabled");
+    config.engine(&config.validate().unwrap()).unwrap();
 
     let mut v = base();
     v["outputs"][0]["flows"] = json!([OUT_A, OUT_B]);
@@ -759,6 +835,20 @@ fn config_errors_exit_2_before_anything_starts() {
     assert!(stderr.contains("foldz: config: "), "{stderr}");
     assert!(
         stderr.contains("reading /nonexistent/foldz-token"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("listener on"), "{stderr}");
+
+    // NMOS needs each domain's MXL id: neither a domain_def.json nor
+    // domains[].id gives one here.
+    let mut v = base();
+    v["rt"] = json!({ "enabled": false });
+    v["domains"][0]["path"] = json!(env!("CARGO_TARGET_TMPDIR"));
+    v["nmos"] = json!({ "enabled": true, "seedName": "x", "advertiseHost": "h" });
+    let (code, stderr) = run_foldz("foldz-exit-domain-id.json", &v);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(
+        stderr.contains("foldz: nmos: domains[0].id: required"),
         "{stderr}"
     );
     assert!(!stderr.contains("listener on"), "{stderr}");

@@ -48,7 +48,7 @@ config:
 | `mxl.domains[]` | `{name: a, hostPath: /dev/shm/mxl/a}` | `name` plus `hostPath` or `volume`; mounted at `/mxl/<name>` |
 | `engine.sampleRate`, `.blockSize`, `.readerMarginSamples` | `48000`, `48`, `576` | `maxCatchupBlocks`, `pruneAfterBlocks`, `rampSamples` are accepted too |
 | `rt.enabled`, `.priority`, `.rtCpu` | `true`, `70`, `auto` | |
-| `nmos.enabled` | `false` | `true` fails rendering: NMOS is not implemented |
+| `nmos.enabled` | `false` | `true` fails rendering: the chart does not render foldz's NMOS settings yet |
 | `nmos.port`, `.service.type` | `8081`, `ClusterIP` | the NMOS listener is bound either way |
 | `service.type`, `.port` | `ClusterIP`, `8080` | the API listener and its Service |
 | `ops.port` | `9090` | `/healthz`, `/readyz`, `/metrics` ([API](../../README.md#api)), always ClusterIP |

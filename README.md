@@ -9,13 +9,16 @@ timeline. Every output applies one gain matrix to one input: a downmix
 preset transcribed from a published standard, a routing of channels by
 label or index, or an explicit matrix. It is configured by one JSON file
 read at start-up; its HTTP API is read-only and reports the matrices in use
-and the engine's state.
+and the engine's state. With NMOS enabled, its inputs and outputs are NMOS
+receivers and senders that IS-05 connects over MXL.
 
 - Downmix presets from ITU-R BS.775-4, ATSC A/52:2018 and ETSI TS 103 190-1,
   each reporting its citation
 - `select` and `shuffle` routings, explicit gain matrices, per-output gain
   and optional LFE inclusion
 - Several inputs, outputs and MXL domains in one process
+- NMOS IS-04 v1.3 registration and IS-05 v1.2 connections over MXL per
+  AMWA BCP-007-03, checked in CI by the AMWA nmos-testing suites
 - A real-time audio thread (`SCHED_FIFO`, locked memory) that runs degraded
   and says so when the privileges are missing
 - HTTPS with certificate files or a generated certificate, bearer token or
@@ -30,9 +33,8 @@ flowchart LR
   in2["input flow<br/>8 channels"] --> r["output pair<br/>shuffle"] --> o3["output flow<br/>2 channels"]
 ```
 
-Not in this version: NMOS (`nmos.enabled: true` is refused) and
-replicated outputs (more than one entry in an output's `flows` is
-refused).
+Not in this version: replicated outputs (more than one entry in an
+output's `flows` is refused).
 
 ## Quick start
 
@@ -146,7 +148,7 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 | `rt.rtCpu` | `auto` | `auto`, `none`, `first`, `last` or an index into the allowed CPUs |
 | `listeners.api` | `127.0.0.1:8080` | `{bind, port, tls}`: `/api/v1` |
 | `listeners.ops` | `0.0.0.0:9090` | `{bind, port, tls}`: `/healthz`, `/readyz`, `/metrics` |
-| `listeners.nmos` | `127.0.0.1:8081` | `{bind, port, tls}`: bound, serves nothing in this version |
+| `listeners.nmos` | `127.0.0.1:8081` | `{bind, port, tls}`: `/x-nmos/` with NMOS enabled, bound either way; TLS refused with NMOS enabled |
 | `listeners.machine` | | refused |
 | `listeners.*.tls` | `{mode: none}` | `mode` `none`, `files` (`certFile`, `keyFile`, `clientCaFile`) or `selfSigned` (`sans`) |
 | `auth.mode` | `none` | `none`, `token` or `proxy` |
@@ -155,9 +157,16 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 | `auth.machineToken` | | refused |
 | `api.allowedHosts` | `[]` | `Host` names accepted besides `localhost` and `127.0.0.1` |
 | `api.allowedOrigins` | `[]` | WebSocket `Origin`s; foldz serves no WebSocket |
-| `nmos` | | `enabled` (only `false`), `seed`, `seedName`, `advertiseHost`, `advertisePort`, `registry.url`, `registry.dnsSdDomain`; checked, not used |
-| `domains[]` | | `name`, `path` (absolute, normalised, unique); at least one |
-| `inputs[]` | | `name`, `channels`, `layout` (one label per channel), `domain` (required with several domains), `flow` (UUID; absent or `null` leaves the input unread); at least one |
+| `nmos.enabled` | `false` | registers the inputs and outputs and takes IS-05 connections, see [NMOS](#nmos) |
+| `nmos.seed`, `nmos.seedName` | | a UUID or a name the resource ids derive from, one of them required with NMOS enabled; the same one gives the same ids after a restart |
+| `nmos.advertiseHost` | | host or address controllers reach the NMOS listener at; required with NMOS enabled |
+| `nmos.advertisePort` | `0` | `0` advertises `listeners.nmos.port` |
+| `nmos.registry.url` | | `http://host[:port]` of a Registration API; set, no DNS-SD browsing |
+| `nmos.registry.dnsSdDomain` | | the unicast DNS-SD domain browsed; empty browses the resolver's search domains, then multicast DNS-SD |
+| `nmos.heartbeatS` | `5` | seconds between heartbeats, also each registry request's timeout; 1 to 60 |
+| `nmos.asset.manufacturer` | `danielclasen` | the BCP-002-02 manufacturer tag |
+| `domains[]` | | `name`, `path` (absolute, normalised, unique), `id` (the domain's MXL UUID, for NMOS); at least one |
+| `inputs[]` | | `name`, `channels`, `layout` (one label per channel), `domain` (required with several domains), `flow` (UUID; absent or `null` starts the input unconnected); at least one |
 | `outputs[]` | | see below; at least one |
 
 An output:
@@ -178,8 +187,8 @@ An output:
 | `lfe` | `"drop"` or `{"include": {"gainDb": <dB>}}` |
 | `gainDb` | default `0` |
 
-An output reading an input without a flow is written silent. Flow ids are
-lowercase UUIDs. An id names a flow within its domain: no flow is read by
+An output reading an unconnected input is written silent. Flow ids are
+lowercase UUIDs; the nil UUID is reserved. An id names a flow within its domain: no flow is read by
 two inputs or both read and written in one domain, while the same id read
 in another domain is another flow. Every written id is unique across all
 domains, as the samplez engine requires of its outputs.
@@ -189,14 +198,86 @@ domains, as the samplez engine requires of its outputs.
 | Listener | Path | |
 |---|---|---|
 | api | `GET /api/v1/downmix` | every input and output with the gain matrix applied, `gainDb` included, and the preset's citation |
-| api | `GET /api/v1/status` | RT setup steps, input and output state, engine counters, TLS certificates in use; 503 once the engine has stopped |
+| api | `GET /api/v1/status` | RT setup steps, input and output state and the flow each input reads, engine counters, TLS certificates in use, each NMOS port's connection and last activation; 503 once the engine has stopped |
 | api | `POST /api/v1/login` | `token` mode: the token for a session cookie |
 | ops | `GET /healthz` | 200 while the audio thread processed a block within the last second |
 | ops | `GET /readyz` | 200 while the engine runs and the API listener serves |
-| ops | `GET /metrics` | Prometheus text: the engine counters of `/api/v1/status` (`samplez_rt_heartbeat_blocks_total`, `samplez_deadline_miss_total`, `samplez_overrun_skipped_samples_total` and others), the maxima `samplez_wake_jitter_max_nanoseconds` and `samplez_process_time_max_nanoseconds` (counters, since start), and per connected input `samplez_input_reads_total{input, outcome}` and `samplez_input_validity_probes_total{input}` |
+| ops | `GET /metrics` | Prometheus text: the engine counters of `/api/v1/status` (`samplez_rt_heartbeat_blocks_total`, `samplez_deadline_miss_total`, `samplez_overrun_skipped_samples_total` and others), the maxima `samplez_wake_jitter_max_nanoseconds` and `samplez_process_time_max_nanoseconds` (counters, since start), per input once connected `samplez_input_reads_total{input, outcome}` and `samplez_input_validity_probes_total{input}`, and with NMOS `samplez_nmos_apply_failures_total{port}` and `samplez_nmos_activation_late_seconds{port}` |
+| nmos | `/x-nmos/node/v1.3/`, `/x-nmos/connection/v1.2/` | with NMOS enabled: the IS-04 Node API and the IS-05 Connection API |
 
 `openapi.json` is the OpenAPI 3.1 document of `/api/v1` in `token` mode;
 a test fails when it differs from the code.
+
+## NMOS
+
+With `nmos.enabled`, foldz is one IS-04 v1.3 Node with one Device
+(BCP-002-02 function `Downmix`). Each output is a Source, Flow and Sender
+and each input a Receiver, all with transport `urn:x-nmos:transport:mxl`
+(AMWA BCP-007-03), grouped by BCP-002-01 grouphints `<name>:Audio out` and
+`<name>:Audio in`. Flows are `audio/float32` at 48 kHz. A Receiver's
+BCP-004-01 caps take exactly the input's channel count. The ids are UUIDv5
+of the seed and the input's or output's name.
+
+foldz finds a registry at `nmos.registry.url`, else by unicast DNS-SD, else
+by multicast DNS-SD, heartbeats it, and deletes its Node from it on SIGTERM.
+With no registry found it is not registered, and it does not advertise
+itself peer to peer.
+
+Each domain's MXL id is the `id` of its `domain_def.json` when the domain
+has one, else `domains[].id`; both present and different, or neither, stop
+foldz at start. A port's `mxl_domain_id` takes only its own domain.
+
+IS-05 v1.2, `/single` and `/bulk`:
+
+- A receiver's `mxl_flow_id` is any MXL UUID; a flow present in the domain
+  must match the caps, an absent one is accepted and read once it appears.
+  `master_enable: true` routes the input to the flow with the engine's fade;
+  `false` detaches it, and its outputs read silence.
+- A sender's `mxl_flow_id` is the configured flow only. `master_enable:
+  false` releases the writer, which deletes the flow; `true` creates it
+  again. A flow another writer holds is a failed activation.
+- A scheduled activation switches at its time's sample index rounded up to
+  a block, at most `engine.blockSize - 1` samples late. foldz applies it the
+  engine's buildLead plus 10 ms early, so the engine can stamp that index.
+  Each input route or detach takes one generation and the engine builds
+  one at a time, so receivers activated together switch one buildLead
+  apart.
+- An activation the engine refuses, or an output whose flow is not created
+  within 5 s, turns the port's `master_enable` false in `/active`, counts in
+  `samplez_nmos_apply_failures_total` and shows in `/api/v1/status`.
+
+Not covered:
+
+- IS-05 state is held in memory: a restart starts from the config, and
+  scheduled activations still pending are lost.
+- A scheduled receiver activation cancelled within buildLead of its time
+  is already stamped: the cancelled flow plays from that time for up to a
+  buildLead before the route back lands.
+- Scheduled activations wait on the monotonic clock from the time they are
+  received: a TAI clock step in between moves them by the step.
+- The NMOS listener has no authentication and no TLS (IS-10 and
+  BCP-003-01 are out of scope), and IS-05 on it re-routes inputs and stops
+  outputs. Its bind address and a NetworkPolicy are what protect it. foldz
+  warns at start when it is bound to a loopback address and advertised as
+  another host.
+
+CI runs the AMWA [nmos-testing](https://github.com/AMWA-TV/nmos-testing)
+suites IS-04-01 (unicast and multicast DNS-SD), IS-05-01 and BCP-007-03-01
+against the image (`tests/nmos/conformance.sh`), each against a fresh
+container, and `tests/nmos/gate.py` fails on any Fail, Warning or Not
+Implemented and on any other result not listed with its reason in
+`tests/nmos/expected.json`. The listed ones:
+
+| Suite | Tests | Result | Why |
+|---|---|---|---|
+| IS-04-01 | `test_01`, `test_01_01` (unicast run), `test_02`, `test_02_01` (multicast run), `test_12` | Test Disabled | the other DNS-SD mode; disabled for Nodes from v1.3 |
+| IS-04-01 | `test_13`, `test_14` | Could Not Test | the tool exercises RTP receivers only |
+| IS-04-01 | `test_19`, `test_19_01` | Could Not Test | MXL ports have no interface bindings, so the Node lists no interfaces |
+| IS-04-01 | `test_22` | Manual | `conformance.sh` compares every resource id across the restarts |
+| IS-05-01 | `test_01` to `test_08`, `test_33` | Not Applicable | replaced by the `auto` tests |
+| IS-05-01 | `test_09_01`, `test_11`, `test_11_02`, `test_12`, `test_12_02`, `test_15`, `test_16`, `test_41`, `test_42` | Could Not Test | MXL senders and receivers are covered by BCP-007-03-01 |
+| BCP-007-03-01 | `test_15` | Manual | `tests/e2e.rs` releases and recreates a sender's flow |
+| all | `auto_node_17` to `_23`, `auto_connection_23` to `_29` | Test Disabled | authorization checks, IS-10 is out of scope |
 
 ## Running it standalone
 

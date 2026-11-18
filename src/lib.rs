@@ -5,12 +5,15 @@
 //! routing or explicit matrix into an output's gain matrix, and [`config`]
 //! reads and checks the start-up configuration. [`api`] serves the downmix
 //! and the engine's status read-only, [`metrics`] passes the engine's
-//! heartbeat and counters to the ops listener, and [`state`] is the
-//! replicated state of one replica without runtime state.
+//! heartbeat and counters to the ops listener, [`nmos`] registers the
+//! inputs and outputs as NMOS receivers and senders and connects them over
+//! IS-05, and [`state`] is the replicated state of one replica without
+//! runtime state.
 
 pub mod api;
 pub mod config;
 pub mod layout;
 pub mod metrics;
+pub mod nmos;
 pub mod presets;
 pub mod state;
