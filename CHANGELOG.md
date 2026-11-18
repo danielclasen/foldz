@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/danielclasen/foldz/compare/v0.1.0...v0.2.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **nmos:** the nil UUID is refused as a flow id or seed, and GET /api/v1/status reports an unconnected input with every slot present, gains a flow per input and an nmos section.
+
+### Features
+
+* **chart:** render the NMOS settings and accept nmos.enabled ([#9](https://github.com/danielclasen/foldz/issues/9)) ([05dfd70](https://github.com/danielclasen/foldz/commit/05dfd700ee6596b6fbe2a93d7430f70f28a6dfd9))
+* **nmos:** register inputs and outputs and take IS-05 connections ([29dfe23](https://github.com/danielclasen/foldz/commit/29dfe23dd577ae27ec5ede87bdf5402c173f1ef2))
+
 ## 0.1.0 (2026-11-17)
 
 
