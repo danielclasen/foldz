@@ -1,0 +1,17 @@
+# VCS and local worktrees
+.git/
+.claude/worktrees/
+
+# Graphify output and caches
+graphify-out/
+.graphify/
+.graphify-cache/
+
+# Build artifacts and dependencies
+target/
+.cargo-registry/
+.cargo-git/
+
+# Generated and fixture files
+*.lock
+tests/nmos/expected.json
