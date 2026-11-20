@@ -7,15 +7,9 @@ is about changing it.
 
 ## Use a git worktree
 
-Make every change in a worktree of its own, never in the main checkout:
-
-```sh
-git fetch origin
-git worktree add .claude/worktrees/<topic>-<id> -b <topic> origin/main
-```
-
-Several sessions and editors may work on one clone at once; two writers
-in one tree corrupt each other's index and branches.
+Work in a worktree of its own, e.g.
+`git worktree add .claude/worktrees/<topic> -b <topic> origin/main`, so
+parallel sessions on one clone do not share an index.
 
 ## Architecture
 
@@ -45,29 +39,30 @@ entries in `Cargo.lock` and nothing else, apart from adapting to its API.
 ## Invariants
 
 - A preset is a transcription of its published standard, coefficient for
-  coefficient, and a test checks each against the standard's table.
+  coefficient. Enforced by: `tests/presets.rs` (`bs775_*` and the A/52
+  and TS 103 190 cases) against the standards' tables.
 - `select` and `shuffle` at 0 dB pass every input sample through bit for
-  bit, signed zeros, NaN payloads and denormals included
-  (`tests/transparency.rs`).
+  bit, signed zeros, NaN payloads and denormals included. Enforced by:
+  `tests/transparency.rs`.
 - Every output block is exactly one of what the engine defines: the input
   through the gain matrix, the same fading in after a silenced block, or
-  silence the engine counted (`tests/e2e.rs`).
-- The API is read-only and follows `openapi.json`.
+  silence the engine counted. Enforced by: `tests/e2e.rs`.
+- The API is read-only and follows `openapi.json`. Enforced by:
+  `committed_openapi_document_matches`.
 
 ## Build and test
 
-foldz needs libmxl and a C toolchain with libclang. CI builds and tests in
-the samplez builder image, pinned by digest in `.github/workflows/ci.yml`;
-`README.md` has the commands.
-
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
-cargo test --workspace --locked --release
-cargo test --locked --test e2e          # with --ulimit rtprio=99 --ulimit memlock=-1
-scripts/chart-test.sh
-```
+`.github/workflows/ci.yml` holds the exact commands; run them as CI does.
+In short: everything builds in the samplez builder image, pinned by
+digest there, with the cargo registry and git directories mounted and
+`SAMPLEZ_REQUIRE_PATHS=avx2`. That runs `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets --locked -- -D warnings`, a
+separate clippy of the e2e test, and `cargo test --workspace --locked` in
+debug and release. The e2e test then runs on its own, with
+`--ulimit rtprio=99 --ulimit memlock=-1` and `SAMPLEZ_REQUIRE_RT=1`, in
+debug and release. The chart has `scripts/chart-test.sh` and
+`scripts/chart-smoke.sh`; `README.md` shows the image build and its
+smoke test.
 
 ## Tests
 
@@ -92,7 +87,8 @@ scripts/chart-test.sh
 ## Text
 
 ASCII only in code, comments, commit messages and PR descriptions: no
-typographic dashes, quotes, arrows or ellipsis characters. State facts,
+typographic dashes, quotes, arrows or ellipsis characters. The vendored
+skills under `.agents/skills/` are exempt. State facts,
 and leave out what cannot be verified from the source, a run or the
 authoritative documentation.
 

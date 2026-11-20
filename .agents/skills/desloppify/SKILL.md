@@ -9,6 +9,41 @@ description: >
 
 <!-- From desloppify 1.0. -->
 
+## In this repository
+
+- Install desloppify 1.0 with its `full` extras, for example
+  `pipx install 'desloppify[full]==1.0'`. The Prerequisite section at the end
+  of the shared part installs an unpinned version.
+- Scan from the repository root: `desloppify scan --path .`. The state lands
+  in `.desloppify/`, which `.gitignore` lists. Set `DESLOPPIFY_NO_BADGE=true`
+  or pass `--no-badge` to `scan`, so no `scorecard.png` lands at the root.
+- desloppify reads no `.gitignore` and scans everything under `--path`,
+  including worktrees under `.claude/worktrees/`. Before the first scan of a
+  checkout, exclude what git ignores, and `.claude/worktrees/` by name. The
+  patterns land in `.desloppify/config.json` and stay local:
+
+  ```sh
+  git -c core.quotePath=false ls-files --others --ignored --exclude-standard --directory |
+    while IFS= read -r p; do desloppify exclude "$p"; done
+  desloppify exclude .claude/worktrees/
+  ```
+- Branches, commits and pull requests follow `AGENTS.md`, not the examples
+  below. Do not run `desloppify config set commit_pr` or
+  `desloppify plan commit-log record`, which link a pull request and rewrite
+  its description, or anything else that edits a pull request description or
+  a commit message.
+- A reference to `docs/<HARNESS>.md`, such as `docs/CLAUDE.md`, means that
+  harness's overlay further down this file. The `.gemini/agents/` and
+  `.github/agents/` definitions the overlays describe do not exist here;
+  create them only when asked.
+- Do not run `desloppify update-skill` or `desloppify setup`, which a scan
+  suggests when it finds no skill in the checkout. The first replaces this
+  file; the second installs skills into the user's home directory.
+- The shared part below is followed by one overlay per harness, each under its
+  own heading: Claude Code, Codex, Gemini CLI, OpenCode, Copilot and Hermes.
+  Follow the overlay of the harness running this session. Mistral Vibe has
+  none; the shared part applies on its own.
+
 ## 1. Your Job
 
 Maximise the **strict score** honestly. Your main cycle: **scan -> plan -> execute -> rescan**. Follow the scan output's **INSTRUCTIONS FOR AGENTS** -- don't substitute your own analysis.
