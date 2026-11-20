@@ -1,3 +1,9 @@
 /target
 /.cargo-registry
 /.cargo-git
+/graphify-out/
+/.graphify/
+/.graphify-cache/
+/.desloppify/
+scorecard.png
+/.claude/worktrees/
