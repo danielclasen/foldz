@@ -336,7 +336,7 @@ pub struct Counters {
 #[serde(rename_all = "camelCase")]
 pub struct TlsStatus {
     pub listener: String,
-    /// `files` or `selfSigned`.
+    /// `none`, `files` or `selfSigned`.
     pub mode: String,
     /// SHA-256 of the certificate in use, colon-separated hex pairs.
     pub fingerprint: String,
