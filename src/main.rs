@@ -58,10 +58,12 @@ fn main() -> ExitCode {
 
     // SIGINT and SIGTERM are blocked before any thread exists, so every
     // thread inherits the mask and only sigwait below receives them.
-    // SAFETY: `set` is initialised by sigemptyset before use.
+    // SAFETY: sigemptyset initialises the set before anything reads it,
+    // and the set lives through every call that takes it.
     let set = unsafe {
-        let mut set = std::mem::zeroed::<libc::sigset_t>();
-        libc::sigemptyset(&mut set);
+        let mut set = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        libc::sigemptyset(set.as_mut_ptr());
+        let mut set = set.assume_init();
         libc::sigaddset(&mut set, libc::SIGINT);
         libc::sigaddset(&mut set, libc::SIGTERM);
         libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
