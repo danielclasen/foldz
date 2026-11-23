@@ -197,6 +197,12 @@ fn main() -> ExitCode {
         .name("foldz-service".into())
         .stack_size(SERVICE_STACK)
         .spawn(move || {
+            // A panic below ends the sigwait in main as a normal end does,
+            // so main joins this thread, sees the panic and exits at once.
+            // SAFETY: SIGTERM to this process ends the sigwait below.
+            let _wake = OnPanic(|| unsafe {
+                libc::kill(libc::getpid(), libc::SIGTERM);
+            });
             let (result, stopping) = runtime.block_on(async {
                 let registration = async {
                     if let Some(n) = &nmos {
@@ -273,5 +279,41 @@ fn hostname() -> String {
     match std::str::from_utf8(&buf[..end]) {
         Ok(name) if rc == 0 && !name.is_empty() => name.to_owned(),
         _ => "foldz".to_owned(),
+    }
+}
+
+/// Runs its action when dropped while its thread panics, and not
+/// otherwise.
+struct OnPanic<F: FnMut()>(F);
+
+impl<F: FnMut()> Drop for OnPanic<F> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            (self.0)();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OnPanic;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// The guard acts on a panic of its thread and on nothing else, so a
+    /// service thread that ends normally does not signal the process.
+    #[test]
+    fn the_guard_acts_only_on_a_panic() {
+        for panics in [false, true] {
+            let fired = Arc::new(AtomicBool::new(false));
+            let seen = fired.clone();
+            let joined = std::thread::spawn(move || {
+                let _guard = OnPanic(|| seen.store(true, Ordering::SeqCst));
+                assert!(!panics, "the service thread panicked");
+            })
+            .join();
+            assert_eq!(joined.is_err(), panics);
+            assert_eq!(fired.load(Ordering::SeqCst), panics, "panics {panics}");
+        }
     }
 }
