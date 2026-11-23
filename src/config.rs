@@ -311,7 +311,8 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-fn err<T>(at: impl Into<String>, reason: impl Into<String>) -> Result<T, ConfigError> {
+/// A [`ConfigError`] at `at` for `reason`.
+pub(crate) fn err<T>(at: impl Into<String>, reason: impl Into<String>) -> Result<T, ConfigError> {
     Err(ConfigError {
         at: at.into(),
         reason: reason.into(),

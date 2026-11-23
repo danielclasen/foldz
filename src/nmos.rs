@@ -17,7 +17,7 @@ use samplez_nmos::{
 use serde_json::Value;
 
 use crate::api::EngineSlot;
-use crate::config::{Config, ConfigError, Domain, is_mxl_uuid};
+use crate::config::{Config, ConfigError, Domain, err, is_mxl_uuid};
 use crate::layout::{Label, Layout};
 
 /// How long an enabled output's writer may take to come in before the
@@ -27,13 +27,6 @@ pub const CREATE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Added to the engine's buildLead for [`Connections::lead`]: the timer
 /// that calls `apply` may wake late.
 const LEAD_SLACK: Duration = Duration::from_millis(10);
-
-fn err<T>(at: impl Into<String>, reason: impl Into<String>) -> Result<T, ConfigError> {
-    Err(ConfigError {
-        at: at.into(),
-        reason: reason.into(),
-    })
-}
 
 /// The MXL id of each configured domain, in config order: the `id` of the
 /// domain's `domain_def.json` when the file is there, else `domains[].id`.
@@ -181,15 +174,18 @@ pub fn nmos_config(config: &Config) -> NmosConfig {
 /// The NMOS node of `config`, whose activations act on the engine in
 /// `engine` once it is there. Loads libmxl to read flow definitions and
 /// to turn activation times into sample indices.
-pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, String> {
-    let ids = domain_ids(&config.domains).map_err(|e| e.to_string())?;
-    let api = samplez_mxl::load(&config.mxl.library_path).map_err(|e| format!("libmxl: {e}"))?;
+pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, NodeError> {
+    let ids = domain_ids(&config.domains).map_err(NodeError::DomainId)?;
+    let api = samplez_mxl::load(&config.mxl.library_path)
+        .map_err(|e| NodeError::Library(e.to_string()))?;
     let instances = config
         .domains
         .iter()
         .map(|d| {
-            Instance::new(&api, Path::new(&d.path))
-                .map_err(|e| format!("MXL domain {}: {e}", d.path))
+            Instance::new(&api, Path::new(&d.path)).map_err(|e| NodeError::Domain {
+                path: d.path.clone(),
+                reason: e.to_string(),
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     let inputs = config
@@ -214,8 +210,34 @@ pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, String> {
         &NoStore,
         SystemTai,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| NodeError::Node(e.to_string()))
 }
+
+/// Why [`node`] could not start the NMOS node.
+#[derive(Debug)]
+pub enum NodeError {
+    /// A domain's MXL UUID could not be found or read.
+    DomainId(ConfigError),
+    /// libmxl could not be loaded.
+    Library(String),
+    /// An MXL domain could not be opened.
+    Domain { path: String, reason: String },
+    /// The node refused its model or configuration.
+    Node(String),
+}
+
+impl std::fmt::Display for NodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeError::DomainId(e) => write!(f, "{e}"),
+            NodeError::Library(e) => write!(f, "libmxl: {e}"),
+            NodeError::Domain { path, reason } => write!(f, "MXL domain {path}: {reason}"),
+            NodeError::Node(e) => f.write_str(e),
+        }
+    }
+}
+
+impl std::error::Error for NodeError {}
 
 /// Each output writing to input `input`'s domain, by name, and the flow it
 /// writes: flows the engine refuses to route that input to.
@@ -510,5 +532,26 @@ mod tests {
             *stub.calls.lock().unwrap(),
             [format!("route 2 {FLOW} 4800"), "detach 2 4800".to_owned()]
         );
+    }
+
+    /// A start-up failure reads as the start-up log has always shown it,
+    /// each cause under its own prefix.
+    #[test]
+    fn a_node_error_names_its_cause() {
+        let domain_id = NodeError::DomainId(ConfigError {
+            at: "domains[0]".into(),
+            reason: "has no MXL UUID \"id\"".into(),
+        });
+        assert_eq!(domain_id.to_string(), "domains[0]: has no MXL UUID \"id\"");
+        assert_eq!(
+            NodeError::Library("not found".into()).to_string(),
+            "libmxl: not found"
+        );
+        let domain = NodeError::Domain {
+            path: "/mxl/a".into(),
+            reason: "missing".into(),
+        };
+        assert_eq!(domain.to_string(), "MXL domain /mxl/a: missing");
+        assert_eq!(NodeError::Node("bad model".into()).to_string(), "bad model");
     }
 }
