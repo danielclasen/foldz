@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/danielclasen/foldz/compare/v0.2.0...v0.2.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **deps:** take url 2.5.9 for RUSTSEC-2026-0592 ([#12](https://github.com/danielclasen/foldz/issues/12)) ([81643d5](https://github.com/danielclasen/foldz/commit/81643d50b4932e1cf82b0490e609c07b996bb58f))
+* **main:** end the process at once when the service thread panics ([f701fc2](https://github.com/danielclasen/foldz/commit/f701fc2c5c860853fd5ce7edc2ce1f08cc1aedce))
+* **main:** exit as a failure when the service thread panicked ([f701fc2](https://github.com/danielclasen/foldz/commit/f701fc2c5c860853fd5ce7edc2ce1f08cc1aedce))
+
 ## [0.2.0](https://github.com/danielclasen/foldz/compare/v0.1.0...v0.2.0) (2026-11-18)
 
 
