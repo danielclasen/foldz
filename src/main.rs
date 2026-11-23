@@ -244,7 +244,12 @@ fn main() -> ExitCode {
     eprintln!("foldz: signal {sig}, stopping");
     // The node leaves the registry before its flows go.
     let _ = stop.send(());
-    let _ = served.join();
+    // A service thread that panicked ends the process as a failure, as
+    // one whose serving failed does.
+    let panicked = served.join().is_err();
+    if panicked {
+        eprintln!("foldz: service thread panicked");
+    }
     ops.set_engine_started(false);
     // The guard is dropped before stop: the listeners lock the slot too,
     // and would wait for stop to return.
@@ -252,7 +257,7 @@ fn main() -> ExitCode {
     if let Some(engine) = engine {
         engine.stop();
     }
-    if serve_failed.load(Ordering::SeqCst) {
+    if panicked || serve_failed.load(Ordering::SeqCst) {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
