@@ -917,3 +917,59 @@ fn config_errors_exit_2_before_anything_starts() {
     );
     assert!(!stderr.contains("listener on"), "{stderr}");
 }
+
+/// validate keeps the input each output reads and the domain it writes,
+/// named or taken as the only one, so later steps read them rather than
+/// resolving the defaults again.
+#[test]
+fn validate_keeps_each_outputs_input_and_domain() {
+    let mut v = base();
+    v["domains"] = json!([
+        { "name": "a", "path": "/mxl/a" },
+        { "name": "b", "path": "/mxl/b" }
+    ]);
+    v["inputs"][0]["domain"] = json!("a");
+    let mut second = v["inputs"][0].clone();
+    second["name"] = json!("alt");
+    second["domain"] = json!("b");
+    second["flow"] = json!("3c5e7a9b-1d2f-4a6b-8c0d-2e4f6a8b0c22");
+    v["inputs"].as_array_mut().unwrap().push(second);
+    v["outputs"][0]["input"] = json!("main");
+    v["outputs"][0]["domain"] = json!("b");
+    let mut other = v["outputs"][0].clone();
+    other["name"] = json!("alt-stereo");
+    other["input"] = json!("alt");
+    other["domain"] = json!("a");
+    other["flows"] = json!(["5d7f9b1c-3e4a-4b6c-8d0e-4f6a8b0c2e33"]);
+    v["outputs"].as_array_mut().unwrap().push(other);
+    let folds = parse(v).unwrap().validate().unwrap();
+    let resolved: Vec<_> = folds
+        .iter()
+        .map(|f| (f.output(), f.input(), f.domain()))
+        .collect();
+    assert_eq!(resolved, [(0, 0, 1), (1, 1, 0)]);
+
+    // One input and one domain: an output naming neither takes them.
+    let folds = parse(base()).unwrap().validate().unwrap();
+    assert_eq!((folds[0].input(), folds[0].domain()), (0, 0));
+}
+
+/// A fold list that is not validate's for the config, cut short or out of
+/// order, is refused, where pairing it with the outputs would have left
+/// outputs out of the engine's config.
+#[test]
+fn a_fold_list_that_is_not_validates_is_refused() {
+    let mut v = base();
+    let mut other = v["outputs"][0].clone();
+    other["name"] = json!("other");
+    other["flows"] = json!(["5d7f9b1c-3e4a-4b6c-8d0e-4f6a8b0c2e33"]);
+    v["outputs"].as_array_mut().unwrap().push(other);
+    let config = parse(v).unwrap();
+    let folds = config.validate().unwrap();
+    config.engine(&folds).unwrap();
+    let short = std::panic::catch_unwind(|| config.engine(&folds[..1]));
+    assert!(short.is_err(), "a short fold list was taken");
+    let swapped = [folds[1].clone(), folds[0].clone()];
+    let swapped = std::panic::catch_unwind(|| config.engine(&swapped));
+    assert!(swapped.is_err(), "folds out of order were taken");
+}

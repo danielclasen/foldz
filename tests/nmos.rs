@@ -135,10 +135,10 @@ fn config() -> Config {
 #[test]
 fn every_input_is_a_receiver_and_every_output_a_sender() {
     let config = config();
-    config.validate().unwrap();
+    let folds = config.validate().unwrap();
     let a: samplez_nmos::uuid::Uuid = DOMAIN.parse().unwrap();
     let b: samplez_nmos::uuid::Uuid = OTHER.parse().unwrap();
-    let m = model(&config, &[a, b]);
+    let m = model(&config, &folds, &[a, b]);
 
     assert_eq!(m.senders.len(), 2);
     let s = &m.senders[0];
@@ -183,10 +183,10 @@ fn every_input_is_a_receiver_and_every_output_a_sender() {
 #[test]
 fn an_input_may_not_read_an_output_of_its_own_domain() {
     let config = config();
-    config.validate().unwrap();
-    assert_eq!(foldz::nmos::written_in_domain(&config, 0), []);
+    let folds = config.validate().unwrap();
+    assert_eq!(foldz::nmos::written_in_domain(&config, &folds, 0), []);
     assert_eq!(
-        foldz::nmos::written_in_domain(&config, 1),
+        foldz::nmos::written_in_domain(&config, &folds, 1),
         [
             (
                 "stereo".to_owned(),

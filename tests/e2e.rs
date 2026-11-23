@@ -490,7 +490,7 @@ fn dropouts(foldz: &Foldz) -> Dropouts {
 /// Gains of the outputs [`downmix`] configures, from the cited tables
 /// rather than from [`foldz::presets::fold`], which the bit-exact check
 /// takes them from.
-fn cited_gains(folds: &[foldz::presets::Fold]) {
+fn cited_gains(folds: &[foldz::config::OutputFold]) {
     let db = |d: f64| 10f64.powf(d / 20.0);
     // Input channels L R C LFE Lss Rss Lrs Rrs; (output, output channel,
     // input channel, gain).

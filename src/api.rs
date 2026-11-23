@@ -17,8 +17,8 @@ use samplez_service::config::TlsMode;
 use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
 
-use crate::config::{Config, UNCONNECTED_FLOW};
-use crate::presets::{Fold, Lfe, PresetName};
+use crate::config::{Config, OutputFold, UNCONNECTED_FLOW, checked};
+use crate::presets::{Lfe, PresetName};
 
 /// The running engine; `None` once it stopped.
 pub type EngineSlot = Arc<Mutex<Option<Engine>>>;
@@ -71,7 +71,11 @@ pub struct DownmixOutput {
 
 impl Downmix {
     /// From a config and the folds [`Config::validate`] returned for it.
-    pub fn new(config: &Config, folds: &[Fold]) -> Downmix {
+    ///
+    /// # Panics
+    ///
+    /// If `folds` are not those [`Config::validate`] returned for `config`.
+    pub fn new(config: &Config, folds: &[OutputFold]) -> Downmix {
         let only_domain = || config.domains[0].name.clone();
         let labels = |l: &crate::layout::Layout| l.labels().iter().map(|l| l.to_string()).collect();
         let inputs = config
@@ -87,7 +91,7 @@ impl Downmix {
         let outputs = config
             .outputs
             .iter()
-            .zip(folds)
+            .zip(checked(folds, config.outputs.len()))
             .map(|(o, f)| {
                 let preset = o.preset.map(|p| p.to_string());
                 let citation = match o.preset {
@@ -101,11 +105,8 @@ impl Downmix {
                 let m = &f.matrix;
                 DownmixOutput {
                     name: o.name.clone(),
-                    input: o
-                        .input
-                        .clone()
-                        .unwrap_or_else(|| config.inputs[0].name.clone()),
-                    domain: o.domain.clone().unwrap_or_else(only_domain),
+                    input: config.inputs[f.input()].name.clone(),
+                    domain: config.domains[f.domain()].name.clone(),
                     flow: o.flows[0].clone(),
                     label: o.label().to_owned(),
                     grouphint: format!("{}:{}", o.group(), o.role()),

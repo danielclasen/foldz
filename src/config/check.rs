@@ -2,6 +2,24 @@
 
 use super::*;
 
+/// `folds` as [`Config::validate`] returned them for a config of `outputs`
+/// outputs, one per output in order.
+///
+/// # Panics
+///
+/// If `folds` is not one fold per output in order, as a list taken from
+/// another config or cut short is not: a zip with the outputs would leave
+/// outputs out or pair them with another output's fold.
+pub(crate) fn checked(folds: &[OutputFold], outputs: usize) -> &[OutputFold] {
+    let in_order = folds.iter().enumerate().all(|(i, f)| f.output == i);
+    assert!(
+        folds.len() == outputs && in_order,
+        "{} folds for {outputs} outputs, or out of order: not validate's",
+        folds.len()
+    );
+    folds
+}
+
 /// What [`Config::validate`] has seen so far, which each input and output
 /// is checked against: the domain and input names, and the names and flow
 /// ids taken by the inputs and outputs before it.
@@ -57,17 +75,12 @@ fn check_uuid(at: &str, id: &str) -> Result<(), ConfigError> {
 
 /// Resolves an optional reference to a named item, required when there is
 /// more than one item.
-fn pick<'a>(
-    at: &str,
-    what: &str,
-    given: Option<&str>,
-    names: &[&'a str],
-) -> Result<&'a str, ConfigError> {
+fn pick(at: &str, what: &str, given: Option<&str>, names: &[&str]) -> Result<usize, ConfigError> {
     match (given, names) {
-        (None, [only]) => Ok(*only),
+        (None, [_]) => Ok(0),
         (None, _) => err(at, format!("required with more than one {what}")),
-        (Some(name), _) => match names.iter().find(|n| **n == name) {
-            Some(found) => Ok(*found),
+        (Some(name), _) => match names.iter().position(|n| *n == name) {
+            Some(found) => Ok(found),
             None => err(at, format!("no {what} named {name:?}")),
         },
     }
@@ -148,7 +161,7 @@ fn named(kind: &'static str, name: &str) -> impl FnOnce(ConfigError) -> ConfigEr
 impl Config {
     /// Checks the whole config and returns each output's fold, in output
     /// order.
-    pub fn validate(&self) -> Result<Vec<Fold>, ConfigError> {
+    pub fn validate(&self) -> Result<Vec<OutputFold>, ConfigError> {
         self.check_nmos()?;
         // The machine listener serves machine clients that send commands;
         // foldz takes none.
@@ -219,7 +232,7 @@ impl Config {
         let mut folds = Vec::with_capacity(self.outputs.len());
         for (i, output) in self.outputs.iter().enumerate() {
             let folded = self
-                .check_output(&format!("outputs[{i}]"), output, &mut seen)
+                .check_output(&format!("outputs[{i}]"), i, output, &mut seen)
                 .map_err(named("output", &output.name))?;
             folds.push(folded);
         }
@@ -273,7 +286,7 @@ impl Config {
 
     /// Reads, parses and checks the config file at `path`, and returns it
     /// with each output's fold.
-    pub fn load(path: &Path) -> Result<(Config, Vec<Fold>), ConfigError> {
+    pub fn load(path: &Path) -> Result<(Config, Vec<OutputFold>), ConfigError> {
         let at = path.display().to_string();
         let text = std::fs::read_to_string(path).or_else(|e| err(&at, e.to_string()))?;
         let config: Config = serde_json::from_str(&text).or_else(|e| err(&at, e.to_string()))?;
@@ -294,7 +307,7 @@ impl Config {
     /// # Panics
     ///
     /// If the config did not pass [`Config::validate`].
-    pub fn engine(&self, folds: &[Fold]) -> Result<samplez::Config, ConfigError> {
+    pub fn engine(&self, folds: &[OutputFold]) -> Result<samplez::Config, ConfigError> {
         if self.outputs.iter().any(|o| o.flows.len() > 1) {
             return err(
                 "outputs",
@@ -328,13 +341,8 @@ impl Config {
         let mut matrix = vec![vec![0.0f32; columns]; rows];
         let mut outputs = Vec::new();
         let mut column = 0;
-        for (output, f) in self.outputs.iter().zip(folds) {
-            let input = match &output.input {
-                Some(name) => self.inputs.iter().position(|i| &i.name == name),
-                None => Some(0),
-            }
-            .expect("validate resolved the input");
-            let first = first_row[input];
+        for (output, f) in self.outputs.iter().zip(checked(folds, self.outputs.len())) {
+            let first = first_row[f.input];
             for j in 0..f.matrix.outputs() {
                 for i in 0..f.matrix.inputs() {
                     matrix[first + i][column + j] = f.matrix.gain(j, i);
@@ -343,7 +351,7 @@ impl Config {
             column += f.matrix.outputs();
             outputs.push(serde_json::json!({
                 "name": output.name,
-                "domain": domain(&output.domain),
+                "domain": self.domains[f.domain].name,
                 "flowId": output.flows[0],
                 "label": output.label(),
                 "group": output.group(),
@@ -404,12 +412,12 @@ impl Config {
                 ),
             );
         }
-        let domain = pick(
+        let domain = seen.domains[pick(
             &format!("{at}.domain"),
             "domain",
             input.domain.as_deref(),
             &seen.domains,
-        )?;
+        )?];
         if let Some(flow) = &input.flow {
             check_uuid(&format!("{at}.flow"), flow)?;
             // A flow id in another domain is another flow.
@@ -426,9 +434,10 @@ impl Config {
     fn check_output<'a>(
         &self,
         at: &str,
+        index: usize,
         output: &'a Output,
         seen: &mut Seen<'a>,
-    ) -> Result<Fold, ConfigError> {
+    ) -> Result<OutputFold, ConfigError> {
         if output.name.is_empty() {
             return err(at, "name is empty");
         }
@@ -443,18 +452,20 @@ impl Config {
                 );
             }
         }
-        let input_name = pick(
+        let input_index = pick(
             &format!("{at}.input"),
             "input",
             output.input.as_deref(),
             &seen.input_names,
         )?;
-        let domain = pick(
+        let input_name = seen.input_names[input_index];
+        let domain_index = pick(
             &format!("{at}.domain"),
             "domain",
             output.domain.as_deref(),
             &seen.domains,
         )?;
+        let domain = seen.domains[domain_index];
 
         let members = self.outputs[0].flows.len();
         let flows_at = format!("{at}.flows");
@@ -532,6 +543,12 @@ impl Config {
             output.lfe,
             output.gain_db,
         )
+        .map(|fold| OutputFold {
+            fold,
+            output: index,
+            input: input_index,
+            domain: domain_index,
+        })
         .or_else(|e| err(at, e.to_string()))
     }
 

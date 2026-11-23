@@ -17,7 +17,7 @@ use samplez_nmos::{
 use serde_json::Value;
 
 use crate::api::EngineSlot;
-use crate::config::{Config, ConfigError, Domain, err, is_mxl_uuid};
+use crate::config::{Config, ConfigError, Domain, OutputFold, checked, err, is_mxl_uuid};
 use crate::layout::{Label, Layout};
 
 /// How long an enabled output's writer may take to come in before the
@@ -116,16 +116,17 @@ fn flow_uuid(id: &str) -> Uuid {
 /// # Panics
 ///
 /// If `config` did not pass [`Config::validate`].
-pub fn model(config: &Config, domains: &[Uuid]) -> NodeModel {
+pub fn model(config: &Config, folds: &[OutputFold], domains: &[Uuid]) -> NodeModel {
     let senders = config
         .outputs
         .iter()
-        .map(|o| SenderDesc {
+        .zip(checked(folds, config.outputs.len()))
+        .map(|(o, f)| SenderDesc {
             key: o.name.clone(),
             label: o.label().to_owned(),
             channels: channels(&o.layout),
             group: o.group().to_owned(),
-            domain: domains[domain_index(config, o.domain.as_deref())],
+            domain: domains[f.domain()],
             flow: flow_uuid(&o.flows[0]),
         })
         .collect();
@@ -182,7 +183,7 @@ pub fn nmos_config(config: &Config) -> NmosConfig {
 /// # Panics
 ///
 /// If `config` did not pass [`Config::validate`].
-pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, NodeError> {
+pub fn node(config: &Config, folds: &[OutputFold], engine: EngineSlot) -> Result<Nmos, NodeError> {
     let ids = domain_ids(&config.domains).map_err(NodeError::DomainId)?;
     let api = samplez_mxl::load(&config.mxl.library_path)
         .map_err(|e| NodeError::Library(e.to_string()))?;
@@ -202,7 +203,7 @@ pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, NodeError> {
         .map(|i| instances[domain_index(config, i.domain.as_deref())].clone())
         .collect();
     let written = (0..config.inputs.len())
-        .map(|i| written_in_domain(config, i))
+        .map(|i| written_in_domain(config, folds, i))
         .collect();
     let ports = EnginePorts {
         engine,
@@ -212,7 +213,7 @@ pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, NodeError> {
         written,
     };
     Nmos::new(
-        model(config, &ids),
+        model(config, folds, &ids),
         nmos_config(config),
         Arc::new(ports),
         &NoStore,
@@ -253,13 +254,18 @@ impl std::error::Error for NodeError {}
 /// # Panics
 ///
 /// If `config` did not pass [`Config::validate`].
-pub fn written_in_domain(config: &Config, input: usize) -> Vec<(String, String)> {
+pub fn written_in_domain(
+    config: &Config,
+    folds: &[OutputFold],
+    input: usize,
+) -> Vec<(String, String)> {
     let domain = domain_index(config, config.inputs[input].domain.as_deref());
     config
         .outputs
         .iter()
-        .filter(|o| domain_index(config, o.domain.as_deref()) == domain)
-        .map(|o| (o.name.clone(), o.flows[0].clone()))
+        .zip(checked(folds, config.outputs.len()))
+        .filter(|(_, f)| f.domain() == domain)
+        .map(|(o, _)| (o.name.clone(), o.flows[0].clone()))
         .collect()
 }
 

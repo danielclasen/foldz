@@ -14,7 +14,44 @@ use crate::presets::{Fold, Lfe, Mapping, PresetName, fold};
 
 mod check;
 
-pub(crate) use check::err;
+/// An output's fold with the input it reads and the domain it writes, as
+/// [`Config::validate`] resolved them: indices into the config's inputs
+/// and domains. Only `validate` builds one, one per output in order, so
+/// later steps take the resolution rather than re-deriving defaults.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputFold {
+    fold: Fold,
+    output: usize,
+    input: usize,
+    domain: usize,
+}
+
+impl OutputFold {
+    /// The output's index in the config.
+    pub fn output(&self) -> usize {
+        self.output
+    }
+
+    /// The index of the input the output reads.
+    pub fn input(&self) -> usize {
+        self.input
+    }
+
+    /// The index of the domain the output writes.
+    pub fn domain(&self) -> usize {
+        self.domain
+    }
+}
+
+impl std::ops::Deref for OutputFold {
+    type Target = Fold;
+
+    fn deref(&self) -> &Fold {
+        &self.fold
+    }
+}
+
+pub(crate) use check::{checked, err};
 pub use check::{is_dns_name, is_http_url, is_lowercase_uuid, is_mxl_uuid};
 
 /// Most member flows per output: an `MxlFlowRedundancySet` merges 2 to 7

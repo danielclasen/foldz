@@ -90,7 +90,7 @@ fn main() -> ExitCode {
     };
     let slot: api::EngineSlot = Arc::new(Mutex::new(None));
     let nmos = if config.nmos.enabled {
-        match foldz::nmos::node(&config, slot.clone()) {
+        match foldz::nmos::node(&config, &folds, slot.clone()) {
             Ok(n) => Some(n),
             Err(e) => {
                 eprintln!("foldz: nmos: {e}");
