@@ -112,6 +112,10 @@ fn flow_uuid(id: &str) -> Uuid {
 /// Sender's grouphint group is the output's `group`, the group of its MXL
 /// flow's grouphint; a Receiver's is the input's name. The role is
 /// samplez-nmos's per resource kind, `Audio out` and `Audio in`.
+///
+/// # Panics
+///
+/// If `config` did not pass [`Config::validate`].
 pub fn model(config: &Config, domains: &[Uuid]) -> NodeModel {
     let senders = config
         .outputs
@@ -174,6 +178,10 @@ pub fn nmos_config(config: &Config) -> NmosConfig {
 /// The NMOS node of `config`, whose activations act on the engine in
 /// `engine` once it is there. Loads libmxl to read flow definitions and
 /// to turn activation times into sample indices.
+///
+/// # Panics
+///
+/// If `config` did not pass [`Config::validate`].
 pub fn node(config: &Config, engine: EngineSlot) -> Result<Nmos, NodeError> {
     let ids = domain_ids(&config.domains).map_err(NodeError::DomainId)?;
     let api = samplez_mxl::load(&config.mxl.library_path)
@@ -241,6 +249,10 @@ impl std::error::Error for NodeError {}
 
 /// Each output writing to input `input`'s domain, by name, and the flow it
 /// writes: flows the engine refuses to route that input to.
+///
+/// # Panics
+///
+/// If `config` did not pass [`Config::validate`].
 pub fn written_in_domain(config: &Config, input: usize) -> Vec<(String, String)> {
     let domain = domain_index(config, config.inputs[input].domain.as_deref());
     config
@@ -251,7 +263,8 @@ pub fn written_in_domain(config: &Config, input: usize) -> Vec<(String, String)>
         .collect()
 }
 
-/// What `domain` holds under `flow`, read from its flow definition.
+/// What the MXL domain `instance` holds under `flow`, read from its flow
+/// definition.
 pub fn flow_seen(instance: &Instance, flow: &str) -> Result<FlowSeen, Reject> {
     let reject = |e: &dyn std::fmt::Display| Reject(format!("flow {flow}: {e}"));
     if instance

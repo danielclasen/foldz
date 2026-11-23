@@ -290,6 +290,10 @@ impl Config {
     ///
     /// Refuses what this build does not implement: more than one member
     /// flow per output, which needs replication.
+    ///
+    /// # Panics
+    ///
+    /// If the config did not pass [`Config::validate`].
     pub fn engine(&self, folds: &[Fold]) -> Result<samplez::Config, ConfigError> {
         if self.outputs.iter().any(|o| o.flows.len() > 1) {
             return err(

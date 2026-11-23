@@ -317,7 +317,8 @@ impl Preset {
     }
 
     /// The coefficients, in the channel order of the source document's
-    /// equations.
+    /// equations; the AC-4 tables, whose document numbers channels
+    /// otherwise, in foldz's order.
     pub fn table(self) -> Table {
         let bs775 =
             |rows: &[[f64; 5]], outputs: &[Label]| Table::from_static(BS775_INPUTS, outputs, rows);
