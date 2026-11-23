@@ -14,16 +14,21 @@ parallel sessions on one clone do not share an index.
 ## Architecture
 
 - `src/`: the binary, in Rust.
-  - `config.rs`: reads and checks the start-up configuration.
+  - `config.rs`: the start-up configuration's types; `config/check.rs`
+    checks it and builds the engine's configuration from it.
   - `layout.rs`: names the channels of a flow.
-  - `presets.rs`: turns a downmix preset, a routing or an explicit
-    matrix into an output's gain matrix.
+  - `presets.rs`: the downmix presets and their standards' tables;
+    `presets/fold.rs` turns a preset, a routing or an explicit matrix
+    into an output's gain matrix.
   - `api.rs`: the read-only HTTP API (`openapi.json`).
   - `metrics.rs`: passes the engine's counters on.
   - `nmos.rs`: IS-04 registration and IS-05 connections over MXL.
   - `state.rs`: a replicated state of one replica that takes no commands
     and stays at revision 0.
 - `tests/`: `presets.rs` and `transparency.rs` check the matrices;
+  `config.rs` the configuration's checks; `api.rs` the HTTP API against
+  `openapi.json`; `nmos.rs` the NMOS node model, domain ids and flow
+  definitions;
   `e2e.rs` runs the binary on real libmxl flows; `tests/nmos` runs the
   AMWA conformance suites against the image and gates on their results.
 - `charts/foldz`: the Helm chart, with `scripts/chart-test.sh` and

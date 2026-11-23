@@ -58,10 +58,12 @@ fn main() -> ExitCode {
 
     // SIGINT and SIGTERM are blocked before any thread exists, so every
     // thread inherits the mask and only sigwait below receives them.
-    // SAFETY: `set` is initialised by sigemptyset before use.
+    // SAFETY: sigemptyset initialises the set before anything reads it,
+    // and the set lives through every call that takes it.
     let set = unsafe {
-        let mut set = std::mem::zeroed::<libc::sigset_t>();
-        libc::sigemptyset(&mut set);
+        let mut set = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        libc::sigemptyset(set.as_mut_ptr());
+        let mut set = set.assume_init();
         libc::sigaddset(&mut set, libc::SIGINT);
         libc::sigaddset(&mut set, libc::SIGTERM);
         libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
@@ -88,7 +90,7 @@ fn main() -> ExitCode {
     };
     let slot: api::EngineSlot = Arc::new(Mutex::new(None));
     let nmos = if config.nmos.enabled {
-        match foldz::nmos::node(&config, slot.clone()) {
+        match foldz::nmos::node(&config, &folds, slot.clone()) {
             Ok(n) => Some(n),
             Err(e) => {
                 eprintln!("foldz: nmos: {e}");
@@ -195,6 +197,12 @@ fn main() -> ExitCode {
         .name("foldz-service".into())
         .stack_size(SERVICE_STACK)
         .spawn(move || {
+            // A panic below ends the sigwait in main as a normal end does,
+            // so main joins this thread, sees the panic and exits at once.
+            // SAFETY: SIGTERM to this process ends the sigwait below.
+            let _wake = OnPanic(|| unsafe {
+                libc::kill(libc::getpid(), libc::SIGTERM);
+            });
             let (result, stopping) = runtime.block_on(async {
                 let registration = async {
                     if let Some(n) = &nmos {
@@ -242,7 +250,12 @@ fn main() -> ExitCode {
     eprintln!("foldz: signal {sig}, stopping");
     // The node leaves the registry before its flows go.
     let _ = stop.send(());
-    let _ = served.join();
+    // A service thread that panicked ends the process as a failure, as
+    // one whose serving failed does.
+    let panicked = served.join().is_err();
+    if panicked {
+        eprintln!("foldz: service thread panicked");
+    }
     ops.set_engine_started(false);
     // The guard is dropped before stop: the listeners lock the slot too,
     // and would wait for stop to return.
@@ -250,7 +263,7 @@ fn main() -> ExitCode {
     if let Some(engine) = engine {
         engine.stop();
     }
-    if serve_failed.load(Ordering::SeqCst) {
+    if panicked || serve_failed.load(Ordering::SeqCst) {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
@@ -266,5 +279,41 @@ fn hostname() -> String {
     match std::str::from_utf8(&buf[..end]) {
         Ok(name) if rc == 0 && !name.is_empty() => name.to_owned(),
         _ => "foldz".to_owned(),
+    }
+}
+
+/// Runs its action when dropped while its thread panics, and not
+/// otherwise.
+struct OnPanic<F: FnMut()>(F);
+
+impl<F: FnMut()> Drop for OnPanic<F> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            (self.0)();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OnPanic;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// The guard acts on a panic of its thread and on nothing else, so a
+    /// service thread that ends normally does not signal the process.
+    #[test]
+    fn the_guard_acts_only_on_a_panic() {
+        for panics in [false, true] {
+            let fired = Arc::new(AtomicBool::new(false));
+            let seen = fired.clone();
+            let joined = std::thread::spawn(move || {
+                let _guard = OnPanic(|| seen.store(true, Ordering::SeqCst));
+                assert!(!panics, "the service thread panicked");
+            })
+            .join();
+            assert_eq!(joined.is_err(), panics);
+            assert_eq!(fired.load(Ordering::SeqCst), panics, "panics {panics}");
+        }
     }
 }

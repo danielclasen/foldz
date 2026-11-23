@@ -692,7 +692,7 @@
             "type": "integer"
           },
           "mode": {
-            "description": "`files` or `selfSigned`.",
+            "description": "`none`, `files` or `selfSigned`.",
             "type": "string"
           },
           "notAfter": {
