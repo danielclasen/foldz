@@ -14,10 +14,12 @@ parallel sessions on one clone do not share an index.
 ## Architecture
 
 - `src/`: the binary, in Rust.
-  - `config.rs`: reads and checks the start-up configuration.
+  - `config.rs`: the start-up configuration's types; `config/check.rs`
+    checks it and builds the engine's configuration from it.
   - `layout.rs`: names the channels of a flow.
-  - `presets.rs`: turns a downmix preset, a routing or an explicit
-    matrix into an output's gain matrix.
+  - `presets.rs`: the downmix presets and their standards' tables;
+    `presets/fold.rs` turns a preset, a routing or an explicit matrix
+    into an output's gain matrix.
   - `api.rs`: the read-only HTTP API (`openapi.json`).
   - `metrics.rs`: passes the engine's counters on.
   - `nmos.rs`: IS-04 registration and IS-05 connections over MXL.
