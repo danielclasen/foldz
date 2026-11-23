@@ -311,6 +311,19 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+/// What [`Config::validate`] has seen so far, which each input and output
+/// is checked against: the domain and input names, and the names and flow
+/// ids taken by the inputs and outputs before it.
+struct Seen<'a> {
+    domains: Vec<&'a str>,
+    input_names: Vec<&'a str>,
+    /// Input and output names, which share one namespace.
+    names: HashSet<&'a str>,
+    /// The flows inputs read, each with its domain.
+    input_flows: HashSet<(&'a str, &'a str)>,
+    output_flows: HashSet<&'a str>,
+}
+
 /// A [`ConfigError`] at `at` for `reason`.
 pub(crate) fn err<T>(at: impl Into<String>, reason: impl Into<String>) -> Result<T, ConfigError> {
     Err(ConfigError {
@@ -500,33 +513,22 @@ impl Config {
         if self.outputs.is_empty() {
             return err("outputs", "at least one output is required");
         }
-        let mut names = HashSet::new();
-        let mut input_flows = HashSet::new();
+        let mut seen = Seen {
+            domains,
+            input_names: self.inputs.iter().map(|i| i.name.as_str()).collect(),
+            names: HashSet::new(),
+            input_flows: HashSet::new(),
+            output_flows: HashSet::new(),
+        };
         for (i, input) in self.inputs.iter().enumerate() {
-            self.check_input(
-                &format!("inputs[{i}]"),
-                input,
-                &domains,
-                &mut names,
-                &mut input_flows,
-            )
-            .map_err(named("input", &input.name))?;
+            self.check_input(&format!("inputs[{i}]"), input, &mut seen)
+                .map_err(named("input", &input.name))?;
         }
 
-        let input_names: Vec<&str> = self.inputs.iter().map(|i| i.name.as_str()).collect();
-        let mut output_flows = HashSet::new();
         let mut folds = Vec::with_capacity(self.outputs.len());
         for (i, output) in self.outputs.iter().enumerate() {
             let folded = self
-                .check_output(
-                    &format!("outputs[{i}]"),
-                    output,
-                    &domains,
-                    &input_names,
-                    &mut names,
-                    &input_flows,
-                    &mut output_flows,
-                )
+                .check_output(&format!("outputs[{i}]"), output, &mut seen)
                 .map_err(named("output", &output.name))?;
             folds.push(folded);
         }
@@ -689,14 +691,12 @@ impl Config {
         &self,
         at: &str,
         input: &'a Input,
-        domains: &[&'a str],
-        names: &mut HashSet<&'a str>,
-        input_flows: &mut HashSet<(&'a str, &'a str)>,
+        seen: &mut Seen<'a>,
     ) -> Result<(), ConfigError> {
         if input.name.is_empty() {
             return err(at, "name is empty");
         }
-        if !names.insert(input.name.as_str()) {
+        if !seen.names.insert(input.name.as_str()) {
             return err(at, "name is used twice");
         }
         if input.channels != input.layout.len() {
@@ -713,12 +713,12 @@ impl Config {
             &format!("{at}.domain"),
             "domain",
             input.domain.as_deref(),
-            domains,
+            &seen.domains,
         )?;
         if let Some(flow) = &input.flow {
             check_uuid(&format!("{at}.flow"), flow)?;
             // A flow id in another domain is another flow.
-            if !input_flows.insert((domain, flow.as_str())) {
+            if !seen.input_flows.insert((domain, flow.as_str())) {
                 return err(
                     format!("{at}.flow"),
                     format!("flow {flow} is read by another input in domain {domain:?}"),
@@ -728,24 +728,16 @@ impl Config {
         Ok(())
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the sets of names and flow ids seen so far are threaded through every output"
-    )]
     fn check_output<'a>(
         &self,
         at: &str,
         output: &'a Output,
-        domains: &[&str],
-        input_names: &[&str],
-        names: &mut HashSet<&'a str>,
-        input_flows: &HashSet<(&str, &str)>,
-        output_flows: &mut HashSet<&'a str>,
+        seen: &mut Seen<'a>,
     ) -> Result<Fold, ConfigError> {
         if output.name.is_empty() {
             return err(at, "name is empty");
         }
-        if !names.insert(output.name.as_str()) {
+        if !seen.names.insert(output.name.as_str()) {
             return err(at, "name is used twice among inputs and outputs");
         }
         for (field, value) in [("group", output.group()), ("role", output.role())] {
@@ -760,13 +752,13 @@ impl Config {
             &format!("{at}.input"),
             "input",
             output.input.as_deref(),
-            input_names,
+            &seen.input_names,
         )?;
         let domain = pick(
             &format!("{at}.domain"),
             "domain",
             output.domain.as_deref(),
-            domains,
+            &seen.domains,
         )?;
 
         let members = self.outputs[0].flows.len();
@@ -806,13 +798,13 @@ impl Config {
         // its outputs; an id read in another domain is another flow.
         for (at, flow) in ids.chain(merged) {
             check_uuid(&at, flow)?;
-            if input_flows.contains(&(domain, flow.as_str())) {
+            if seen.input_flows.contains(&(domain, flow.as_str())) {
                 return err(
                     at,
                     format!("flow {flow} is also an input flow in domain {domain:?}"),
                 );
             }
-            if !output_flows.insert(flow.as_str()) {
+            if !seen.output_flows.insert(flow.as_str()) {
                 return err(at, format!("flow {flow} is used twice"));
             }
         }
