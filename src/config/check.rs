@@ -2,14 +2,14 @@
 
 use super::*;
 
-/// `folds` as [`Config::validate`] returned them for a config of `outputs`
-/// outputs, one per output in order.
+/// `folds`, checked to hold one fold per output of a config of `outputs`
+/// outputs, in output order.
 ///
 /// # Panics
 ///
-/// If `folds` is not one fold per output in order, as a list taken from
-/// another config or cut short is not: a zip with the outputs would leave
-/// outputs out or pair them with another output's fold.
+/// If `folds` has another length than `outputs`, or a fold's output index
+/// is not its position: a zip with the outputs would leave outputs out or
+/// pair them with another output's fold.
 pub(crate) fn checked(folds: &[OutputFold], outputs: usize) -> &[OutputFold] {
     let in_order = folds.iter().enumerate().all(|(i, f)| f.output == i);
     assert!(
