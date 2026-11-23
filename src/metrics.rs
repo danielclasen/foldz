@@ -162,6 +162,14 @@ pub struct Exporter {
     nmos: Option<(Nmos, Vec<(Counter, u64)>)>,
 }
 
+/// Adds to `counter` what the source count `now` gained since `last`, and
+/// keeps `now` as the next `last`. A count that went back, as a restarted
+/// source's does, adds nothing.
+fn gain(counter: &mut Counter, last: &mut u64, now: u64) {
+    counter.add(now.saturating_sub(*last));
+    *last = now;
+}
+
 impl Exporter {
     /// With `nmos`, also exports `samplez_nmos_apply_failures_total{port}`
     /// and samplez-nmos's own metrics.
@@ -213,8 +221,7 @@ impl Exporter {
     pub fn sample(&mut self) {
         if let Some((nmos, failures)) = &mut self.nmos {
             for (p, (counter, last)) in nmos.status().ports.iter().zip(failures) {
-                counter.add(p.failures.saturating_sub(*last));
-                *last = p.failures;
+                gain(counter, last, p.failures);
             }
         }
         let engine = self.engine.lock().expect("engine lock poisoned");
@@ -227,28 +234,21 @@ impl Exporter {
             self.ops.heartbeat().beat();
         }
         for e in &mut self.exported {
-            let now = (e.value)(&c);
-            e.counter.add(now.saturating_sub(e.last));
-            e.last = now;
+            gain(&mut e.counter, &mut e.last, (e.value)(&c));
         }
         for status in engine.status().inputs {
-            let known = self.inputs.iter().any(|i| i.name == status.name);
-            if !known && !connected(&status) {
-                continue;
-            }
             let i = match self.inputs.iter().position(|i| i.name == status.name) {
                 Some(i) => i,
-                None => {
+                None if connected(&status) => {
                     self.inputs
                         .push(Input::new(self.ops.metrics(), &status.name));
                     self.inputs.len() - 1
                 }
+                None => continue,
             };
             let counters = InputCounters::of(&status);
             for (counter, value, last) in &mut self.inputs[i].series {
-                let now = value(&counters);
-                counter.add(now.saturating_sub(*last));
-                *last = now;
+                gain(counter, last, value(&counters));
             }
         }
     }
