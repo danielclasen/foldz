@@ -882,7 +882,7 @@ fn oidc_is_refused() {
     assert_invalid(v, "auth.mode", "use none, token or proxy");
     let mut v = base();
     v["auth"] = json!({ "mode": "none", "oidc": oidc });
-    assert_invalid(v, "auth.oidc", "use none, token or proxy");
+    assert_invalid(v, "auth.oidc", "no supported mode reads it");
     for mode in ["none", "token", "proxy"] {
         let mut v = base();
         v["auth"] = json!({ "mode": mode });

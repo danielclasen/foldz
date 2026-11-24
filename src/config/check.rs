@@ -182,7 +182,7 @@ impl Config {
         if self.auth.oidc.is_some() {
             return err(
                 "auth.oidc",
-                "oidc is not supported; use none, token or proxy",
+                "no supported mode reads it; none, token and proxy take no auth.oidc",
             );
         }
 
