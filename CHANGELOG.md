@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/danielclasen/foldz/compare/v0.2.1...v0.3.0) (2026-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **chart:** nmos.enabled with nmos.service.type NodePort or LoadBalancer now fails the render unless networkPolicy.enabled is true and networkPolicy.nmosFrom lists the peers allowed to reach the NMOS port.
+* **config:** auth.mode oidc and auth.oidc stop the start with exit status 2; use none, token or proxy.
+
+### Bug Fixes
+
+* **chart:** refuse an NMOS Service reachable from outside unless policed ([#17](https://github.com/danielclasen/foldz/issues/17)) ([837ee3f](https://github.com/danielclasen/foldz/commit/837ee3f3236c7633e89685d039102d7b888cc9cf))
+* **config:** refuse auth.mode oidc at startup ([#16](https://github.com/danielclasen/foldz/issues/16)) ([8925f11](https://github.com/danielclasen/foldz/commit/8925f116cfaec581c7e0b5e3a893c1ff6625cd41))
+* **nmos:** stop repeating a refused detach ([#18](https://github.com/danielclasen/foldz/issues/18)) ([5f3371a](https://github.com/danielclasen/foldz/commit/5f3371a065891c46fdda5064a20b1e857bb90321))
+
 ## [0.2.1](https://github.com/danielclasen/foldz/compare/v0.2.0...v0.2.1) (2026-11-23)
 
 
