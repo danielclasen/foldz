@@ -6,10 +6,11 @@ how it behaves.
 ## Build and test
 
 Everything builds and tests inside the samplez builder image, pinned by
-digest in `.github/workflows/ci.yml` and the `Dockerfile`; samplez's
-[BUILDING.md](https://github.com/danielclasen/samplez/blob/main/docs/BUILDING.md)
-describes what it holds. `.github/workflows/ci.yml` has the exact
-commands. With the builder's digest as `$BUILDER`:
+digest in `.github/workflows/ci.yml` and the `Dockerfile`; samplez v0.8.0
+describes what it holds in
+[Building and testing](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#building-and-testing).
+`.github/workflows/ci.yml` has the exact commands. With the builder's
+digest as `$BUILDER`:
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" -e SAMPLEZ_REQUIRE_PATHS=avx2 \
@@ -123,5 +124,5 @@ release PR it opens cuts the release and bumps `Cargo.toml` and
   `foldz-<version>-THIRD-PARTY.txt` and `foldz-<version>-SHA256SUMS`,
   built from the `dist` target and checked to be the published image's
   binary;
-- the chart, `oci://ghcr.io/danielclasen/foldz/charts/foldz`, at the same
-  version.
+- the chart, at the same version, under the OCI address
+  [charts/foldz](../charts/foldz/README.md) installs from.

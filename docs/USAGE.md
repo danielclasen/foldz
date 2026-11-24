@@ -45,10 +45,10 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 | `inputs[]` | | `name`, `channels`, `layout` (one label per channel), `domain` (required with several domains), `flow` (UUID; absent or `null` starts the input unconnected); at least one |
 | `outputs[]` | | below; at least one |
 
-The `engine` and `rt` keys are passed to the samplez engine, whose
-[USAGE.md](https://github.com/danielclasen/samplez/blob/main/docs/USAGE.md)
-describes what each does. foldz builds against the samplez release named
-in `Cargo.toml`; the table above is what this build accepts.
+The `engine` and `rt` keys are passed to the samplez engine, at the
+release `Cargo.toml` pins; the table above is what this build accepts, and
+samplez v0.8.0 describes the engine's configuration in
+[samplez-hop](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#samplez-hop).
 
 An output:
 
@@ -208,10 +208,8 @@ Not covered:
 
 ## Release binary
 
-Each release carries the binary as `foldz-<version>-x86_64-linux`, the
-licences of the Rust crates in it as `foldz-<version>-THIRD-PARTY.txt` and
-the SHA-256 sums of both as `foldz-<version>-SHA256SUMS`, built in the
-same stage as the image's binary:
+Each release carries the binary, the licences of the Rust crates in it
+and their SHA-256 sums ([Releases](BUILDING.md#releases)):
 
 ```sh
 gh release download v<version> --repo danielclasen/foldz --pattern 'foldz-*'
@@ -363,9 +361,9 @@ foldz runs its audio thread `SCHED_FIFO` at `rt.priority` and locks its
 memory. That needs `CAP_SYS_NICE` or an `RLIMIT_RTPRIO` at least the
 priority, and `CAP_IPC_LOCK` or an unlimited `RLIMIT_MEMLOCK`. Without
 them foldz runs degraded and says so at start and in `/api/v1/status`
-(`rt`). Each set-up step, and what the host needs besides (swap off,
-`vm.compact_unevictable_allowed=0`), is in samplez's
-[USAGE.md](https://github.com/danielclasen/samplez/blob/main/docs/USAGE.md).
+(`rt`). samplez v0.8.0 describes each step in
+[Real-time set-up](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#real-time-set-up) and what the host needs besides
+in [Real-time requirements](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#real-time-requirements).
 
 The image's binary carries the file capabilities
 `cap_sys_nice,cap_ipc_lock=p`: they take effect when the container is

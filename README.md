@@ -99,8 +99,7 @@ privileges and reports that in `/api/v1/status` (`rt`).
 Other ways to run it:
 
 - The release binary on a host. [Release binary](docs/USAGE.md#release-binary)
-- Kubernetes, with the Helm chart each release publishes as
-  `oci://ghcr.io/danielclasen/foldz/charts/foldz`.
+- Kubernetes, with the Helm chart each release publishes.
   [charts/foldz](charts/foldz/README.md)
 
 Building, testing, CI and releases are in
