@@ -188,8 +188,10 @@ IS-05 v1.2, `/single` and `/bulk`:
   within 5 s, turns the port's `master_enable` false in `/active`, counts
   in `samplez_nmos_apply_failures_total` and shows in `/api/v1/status`;
   the input is detached from the activation's index, or the output
-  disabled. A route the engine stamps later than asked is logged with the
-  sample it switches at.
+  disabled. A detach the engine refuses in turn is not repeated: the input
+  reads on, and the logged failure, also in `/api/v1/status`, names the
+  flow it still reads. A route the engine stamps later than asked is
+  logged with the sample it switches at.
 
 Not covered:
 

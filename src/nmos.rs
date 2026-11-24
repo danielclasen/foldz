@@ -313,6 +313,8 @@ pub fn parse_flow_def(def: &str) -> Option<FlowSeen> {
 pub trait Slots {
     fn route(&self, slot: usize, flow: &str, at_index: u64) -> Result<u64, EntryError>;
     fn detach(&self, slot: usize, at_index: u64) -> Result<u64, EntryError>;
+    /// The flow input `slot` reads now, `None` when it reads none.
+    fn reading(&self, slot: usize) -> Option<String>;
 }
 
 impl Slots for Engine {
@@ -323,21 +325,29 @@ impl Slots for Engine {
     fn detach(&self, slot: usize, at_index: u64) -> Result<u64, EntryError> {
         Engine::detach(self, slot, at_index)
     }
+
+    fn reading(&self, slot: usize) -> Option<String> {
+        let input = &self.status().inputs[slot];
+        crate::api::connected(input).then(|| input.flow_id.clone())
+    }
 }
 
 /// Routes input `slot` to `active`'s flow, or detaches it, at `at_index`
 /// (0: the earliest index). A route the engine refuses detaches the slot
 /// at that index instead: samplez-nmos then turns the receiver's
 /// `master_enable` false in `/active`, and the slot reads nothing either.
+/// A refused detach is not called again, since the same call meets the
+/// same refusal; the failure then names the flow the slot still reads.
 pub fn apply_receiver(
     engine: &impl Slots,
     slot: usize,
     active: &Active,
     at_index: u64,
 ) -> Result<(), Fail> {
-    let applied = match (active.master_enable, active.flow) {
-        (true, Some(flow)) => engine.route(slot, &flow.to_string(), at_index),
-        _ => engine.detach(slot, at_index),
+    let route = active.flow.filter(|_| active.master_enable);
+    let applied = match route {
+        Some(flow) => engine.route(slot, &flow.to_string(), at_index),
+        None => engine.detach(slot, at_index),
     };
     match applied {
         Ok(stamped) => {
@@ -352,16 +362,31 @@ pub fn apply_receiver(
             }
             Ok(())
         }
-        Err(e) => {
-            if let Err(d) = engine.detach(slot, at_index) {
-                eprintln!(
-                    "foldz: nmos: input slot {slot}: the engine refused the detach after a \
-                     refused activation, so it keeps its last flow: {d}"
-                );
-            }
-            Err(Fail(e.to_string()))
-        }
+        Err(e) if route.is_some() => match engine.detach(slot, at_index) {
+            Ok(_) => Err(Fail(e.to_string())),
+            Err(d) => Err(still_reading(
+                engine,
+                slot,
+                format!("the engine refused the route ({e}) and the detach after it ({d})"),
+            )),
+        },
+        Err(e) => Err(still_reading(
+            engine,
+            slot,
+            format!("the engine refused the detach ({e})"),
+        )),
     }
+}
+
+/// The failure of a detach the engine refused, logged: `why`, and the
+/// flow input `slot` reads on, which `/active` no longer shows.
+fn still_reading(engine: &impl Slots, slot: usize, why: String) -> Fail {
+    let reads = match engine.reading(slot) {
+        Some(flow) => format!("input slot {slot} still reads flow {flow}"),
+        None => format!("input slot {slot} reads no flow"),
+    };
+    eprintln!("foldz: nmos: {why}; {reads}");
+    Fail(format!("{why}; {reads}"))
 }
 
 /// The IS-05 hooks on a running engine.
@@ -484,10 +509,25 @@ mod tests {
 
     use super::*;
 
-    /// Refuses routes when `refuse` is set and records every call.
+    /// Refuses routes when `refuse` is set, and detaches when
+    /// `refuse_detach` is, reads `reading` on every slot and records every
+    /// call.
     struct Stub {
         refuse: bool,
+        refuse_detach: bool,
+        reading: Option<String>,
         calls: Mutex<Vec<String>>,
+    }
+
+    impl Stub {
+        fn new(refuse: bool, refuse_detach: bool) -> Stub {
+            Stub {
+                refuse,
+                refuse_detach,
+                reading: Some(OLD.to_owned()),
+                calls: Mutex::new(Vec::new()),
+            }
+        }
     }
 
     impl Slots for Stub {
@@ -508,11 +548,21 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(format!("detach {slot} {at_index}"));
-            Ok(at_index)
+            if self.refuse_detach {
+                Err(EntryError::Full)
+            } else {
+                Ok(at_index)
+            }
+        }
+
+        fn reading(&self, _slot: usize) -> Option<String> {
+            self.reading.clone()
         }
     }
 
     const FLOW: &str = "0d7f6b8e-4a2c-4e8f-9b1a-2c3d4e5f6a03";
+    /// The flow the slot read before the activation.
+    const OLD: &str = "0d7f6b8e-4a2c-4e8f-9b1a-2c3d4e5f6a04";
 
     fn active(master_enable: bool) -> Active {
         Active {
@@ -525,10 +575,7 @@ mod tests {
 
     #[test]
     fn an_enabled_receiver_routes_and_a_disabled_one_detaches() {
-        let stub = Stub {
-            refuse: false,
-            calls: Mutex::new(Vec::new()),
-        };
+        let stub = Stub::new(false, false);
         apply_receiver(&stub, 1, &active(true), 960).unwrap();
         apply_receiver(&stub, 1, &active(false), 0).unwrap();
         assert_eq!(
@@ -541,15 +588,57 @@ mod tests {
     /// must stop reading too, from the activation's index.
     #[test]
     fn a_refused_route_detaches_the_slot_at_the_activation_index() {
-        let stub = Stub {
-            refuse: true,
-            calls: Mutex::new(Vec::new()),
-        };
+        let stub = Stub::new(true, false);
         let e = apply_receiver(&stub, 2, &active(true), 4800).unwrap_err();
         assert!(e.0.contains("outstanding"), "{e}");
         assert_eq!(
             *stub.calls.lock().unwrap(),
             [format!("route 2 {FLOW} 4800"), "detach 2 4800".to_owned()]
+        );
+    }
+
+    /// A refused deactivation leaves the slot on its flow while /active
+    /// shows master_enable false: the same detach again meets the same
+    /// refusal, and the failure says what the slot still reads.
+    #[test]
+    fn a_refused_detach_is_not_repeated_and_names_the_flow_kept() {
+        let stub = Stub::new(false, true);
+        let e = apply_receiver(&stub, 2, &active(false), 4800).unwrap_err();
+        assert_eq!(*stub.calls.lock().unwrap(), ["detach 2 4800".to_owned()]);
+        assert!(e.0.starts_with("the engine refused the detach ("), "{e}");
+        assert!(!e.0.contains("route"), "{e}");
+        assert!(
+            e.0.ends_with(&format!("input slot 2 still reads flow {OLD}")),
+            "{e}"
+        );
+
+        // A detach of a slot that reads nothing leaves it reading nothing.
+        let stub = Stub {
+            reading: None,
+            ..Stub::new(false, true)
+        };
+        let e = apply_receiver(&stub, 2, &active(false), 0).unwrap_err();
+        assert!(e.0.ends_with("input slot 2 reads no flow"), "{e}");
+    }
+
+    /// Both refused: the slot keeps its last flow, and the failure names
+    /// both refusals.
+    #[test]
+    fn a_refused_route_and_detach_name_the_flow_kept() {
+        let stub = Stub::new(true, true);
+        let e = apply_receiver(&stub, 2, &active(true), 4800).unwrap_err();
+        assert_eq!(
+            *stub.calls.lock().unwrap(),
+            [format!("route 2 {FLOW} 4800"), "detach 2 4800".to_owned()]
+        );
+        assert!(
+            e.0.starts_with("the engine refused the route (")
+                && e.0.contains("and the detach after it ("),
+            "{e}"
+        );
+        assert!(
+            e.0.ends_with(&format!("input slot 2 still reads flow {OLD}")),
+            "{e}"
         );
     }
 
