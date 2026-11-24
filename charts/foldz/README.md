@@ -19,8 +19,8 @@ helm install foldz oci://ghcr.io/danielclasen/foldz/charts/foldz \
 The chart renders one JSON config file into a ConfigMap and starts the
 binary with `--config /etc/foldz/config.json`; a change to it rolls the pod.
 `config` carries the product section, `inputs` and `outputs`, with the
-structure `values.schema.json` gives; both are required, and the
-[binary's README](../../README.md#configuration) describes each field.
+structure `values.schema.json` gives; both are required, and
+[docs/USAGE.md](../../docs/USAGE.md#configuration) describes each field.
 Everything else in the file comes from the values below, and `config`
 refuses to repeat it. Secrets reach the file as paths of mounted Secrets,
 never as values.
@@ -55,7 +55,7 @@ config:
 | `nmos.registry.url`, `.dnsSdDomain` | `""`, `""` | `http://host[:port]`; empty browses DNS-SD |
 | `nmos.heartbeatS`, `.asset.manufacturer` | `5`, `danielclasen` | |
 | `service.type`, `.port` | `ClusterIP`, `8080` | the API listener and its Service |
-| `ops.port` | `9090` | `/healthz`, `/readyz`, `/metrics` ([API](../../README.md#api)), always ClusterIP |
+| `ops.port` | `9090` | `/healthz`, `/readyz`, `/metrics` ([API](../../docs/USAGE.md#api)), always ClusterIP |
 | `auth.mode` | `none` | `none`, `token` or `proxy` |
 | `auth.token.existingSecret`, `.key` | `""`, `token` | |
 | `auth.proxy.userHeader`, `.groupsHeader`, `.groupRoles` | `X-Forwarded-User`, `X-Forwarded-Groups`, `{}` | `groupRoles` maps a group to `viewer` or `operator`; required in `proxy` mode |
@@ -87,20 +87,19 @@ change.
 
 ## NMOS
 
-With `nmos.enabled` the config carries the `nmos` settings of the binary's
-[NMOS](../../README.md#nmos) section. Controllers reach the node at the NMOS
-Service, `<release>-nmos.<namespace>.svc.<clusterDomain>` unless
-`nmos.advertiseHost` names another host. The resource ids derive from
-`<namespace>/<release>` unless `nmos.seed` or `nmos.seedName` is set, so a
-reinstall under the same name keeps them. That name is the same in every
-cluster that uses it: clusters sharing a registry need `nmos.seed` or
-`nmos.seedName` set per cluster, or their nodes register the same ids. Each domain needs its MXL id: the
-`id` of a `domain_def.json` in the domain, or `mxl.domains[].id`; foldz
-does not start without one; the schema takes only MXL UUIDs there. TLS on
-the NMOS listener is refused with NMOS enabled, since the Node advertises
-plain HTTP. On SIGTERM foldz waits up to 5 s for the registry to answer
-the Node's DELETE before it releases its writers, so
-`terminationGracePeriodSeconds` below 10 is refused with NMOS enabled.
+With `nmos.enabled` the config carries the `nmos` settings
+[docs/USAGE.md](../../docs/USAGE.md#nmos) describes. Controllers reach the
+node at the NMOS Service, `<release>-nmos.<namespace>.svc.<clusterDomain>`
+unless `nmos.advertiseHost` names another host. The resource ids derive
+from `<namespace>/<release>` unless `nmos.seed` or `nmos.seedName` is set,
+so a reinstall under the same name keeps them. That name is the same in
+every cluster that uses it: clusters sharing a registry need `nmos.seed`
+or `nmos.seedName` set per cluster, or their nodes register the same ids.
+A domain without a `domain_def.json` needs `mxl.domains[].id`, which the
+schema takes only as an MXL UUID. With NMOS enabled, `nmos` in
+`tls.listeners` is refused, and so is a `terminationGracePeriodSeconds`
+below 10, which would not cover the wait for the registry's answer on
+SIGTERM.
 
 ## Real-time scheduling
 
@@ -120,9 +119,8 @@ CPU request and limit from the downward API. Exclusive CPUs further need the
 kubelet's `static` CPU manager policy, which grants them to Guaranteed pods
 only. On
 kernels built with `CONFIG_RT_GROUP_SCHED`, `SCHED_FIFO` is refused to a
-cgroup without an RT runtime budget. The node's own requirements, swap off
-and `vm.compact_unevictable_allowed=0`, are in the binary's
-[real-time setup](../../README.md#real-time-setup).
+cgroup without an RT runtime budget. The node's own requirements are in
+[docs/USAGE.md](../../docs/USAGE.md#real-time-setup).
 
 Pod Security Admission: the `baseline` and `restricted` levels forbid
 `hostPath` volumes and the added capabilities, and `restricted` forbids
@@ -136,8 +134,7 @@ privilege escalation. A namespace running foldz with `hostPath` domains or
 - `none`: no credentials. Refused unless the API Service is `ClusterIP` and
   the ingress is off.
 - `token`: a bearer token from `auth.token.existingSecret`, mounted as a
-  directory so a rotated Secret reaches the file. Browsers exchange it for a
-  session cookie at `POST /api/v1/login`.
+  directory so a rotated Secret reaches the file.
 - `proxy`: an authenticating proxy runs as a sidecar and the API listener
   binds `127.0.0.1`, so only the sidecar reaches it; the API Service targets
   the sidecar. The default sidecar is oauth2-proxy, given `--http-address`
@@ -146,10 +143,11 @@ privilege escalation. A namespace running foldz with `hostPath` domains or
   copies of the identity headers. `auth.proxy.groupRoles` is required:
   without it the binary gives nobody a role.
 
-The binary checks `Host` on requests without a valid bearer and `Origin` on
-WebSocket upgrades. The chart adds the API Service's in-cluster names to
-`allowedHosts`, and each ingress host to `allowedHosts` and its origin to
-`allowedOrigins` (`https://` when the host is in `ingress.tls`). A name or
+How each mode and the `Host` check behave is in
+[docs/USAGE.md](../../docs/USAGE.md#authentication). The chart adds the API
+Service's in-cluster names to `allowedHosts`, and each ingress host to
+`allowedHosts` and its origin to `allowedOrigins` (`https://` when the host
+is in `ingress.tls`). A name or
 origin clients use beyond those goes in `api.allowedHosts` and
 `api.allowedOrigins`.
 
@@ -164,19 +162,18 @@ source.
 
 `tls.mode: none`. Every listener speaks plain HTTP inside the pod; an
 ingress controller, a gateway or a mesh sidecar terminates TLS in front of
-it. The binary marks the session cookie `Secure` when the first value of
-`X-Forwarded-Proto` is `https`, so the proxy has to set that header. The
-browser's `Host` and `Origin` are the external ones, so a name not served by
-`ingress.hosts` goes in `api.allowedHosts` and `api.allowedOrigins`.
+it, and has to set `X-Forwarded-Proto` for the session cookie to be marked
+`Secure`. The browser's `Host` and `Origin` are the external ones, so a
+name not served by `ingress.hosts` goes in `api.allowedHosts` and
+`api.allowedOrigins`.
 
 ### Served by foldz
 
 The API listener, and the NMOS listener when `tls.listeners` names it,
-serve TLS from `tls.crt` and `tls.key`, re-read every 10 seconds, so a
-renewed certificate applies to new connections without a restart. The
-Service port is then named `https`. A TLS listener has no plain-HTTP
-counterpart: foldz does not redirect HTTP to HTTPS. `auth.mode: proxy`
-refuses TLS on the API listener, which only the sidecar reaches.
+serve TLS from `tls.crt` and `tls.key` as files, which foldz re-reads
+([HTTPS](../../docs/USAGE.md#https)), so a renewed certificate applies
+without a restart. The Service port is then named `https`. `auth.mode:
+proxy` refuses TLS on the API listener, which only the sidecar reaches.
 
 - `tls.mode: existingSecret` mounts the `kubernetes.io/tls` Secret named
   in `tls.existingSecret`.
@@ -200,16 +197,3 @@ for an HTTPS backend.
 Replication is not implemented: the StatefulSet runs one audio replica and
 no witness, and `replicas` other than 1 or `witness.enabled` fail rendering.
 Each output's `flows` must hold one flow id per replica.
-
-## Tests
-
-`scripts/chart-test.sh` runs `helm lint`, the `helm unittest` suites in
-`tests/` (golden renders of every scenario in `ci/` and the validation
-rules) and validates each scenario's render with kubeconform against a
-pinned Kubernetes API version.
-
-`scripts/chart-smoke.sh <repository>:<tag>` installs the chart with a local
-image into a throwaway kind cluster, with RT off, token auth, a `hostPath`
-domain and the config of `ci/base.yaml`. It checks `/healthz`, `/readyz`
-and that `/api/v1/status` answers 401 without the bearer and 200 with it,
-and that the output flow leaves the node's domain on uninstall.
