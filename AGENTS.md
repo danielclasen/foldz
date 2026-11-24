@@ -2,8 +2,15 @@
 
 Rules for working in this repository. Read them before opening a PR or
 running an automated assistant against this tree. `README.md` is the
-human-facing document and wins for anything about using foldz; this file
-is about changing it.
+overview, `docs/USAGE.md` describes how foldz behaves and is configured,
+`docs/ARCHITECTURE.md` how it is built on samplez, `docs/BUILDING.md` how
+it is built, tested and released, and `charts/foldz/README.md` the chart
+and its values; this file holds the rules for changing it. A change to
+behaviour updates `docs/USAGE.md`, a change to how the parts fit together
+`docs/ARCHITECTURE.md`, a change to the build, tests, CI or releases
+`docs/BUILDING.md`, and a change to the chart its README, in the same PR.
+The docs win on behaviour; each fact lives in one of them, and the others
+link to it.
 
 ## Use a git worktree
 
@@ -57,17 +64,8 @@ entries in `Cargo.lock` and nothing else, apart from adapting to its API.
 
 ## Build and test
 
-`.github/workflows/ci.yml` holds the exact commands; run them as CI does.
-In short: everything builds in the samplez builder image, pinned by
-digest there, with the cargo registry and git directories mounted and
-`SAMPLEZ_REQUIRE_PATHS=avx2`. That runs `cargo fmt --all --check`,
-`cargo clippy --workspace --all-targets --locked -- -D warnings`, a
-separate clippy of the e2e test, and `cargo test --workspace --locked` in
-debug and release. The e2e test then runs on its own, with
-`--ulimit rtprio=99 --ulimit memlock=-1` and `SAMPLEZ_REQUIRE_RT=1`, in
-debug and release. The chart has `scripts/chart-test.sh` and
-`scripts/chart-smoke.sh`; `README.md` shows the image build and its
-smoke test.
+`docs/BUILDING.md` has the build, test and chart commands, and
+`.github/workflows/ci.yml` the exact ones CI runs; run them as CI does.
 
 ## Tests
 
