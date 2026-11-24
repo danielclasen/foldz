@@ -82,6 +82,60 @@ tests:
       terminationGracePeriodSeconds: 5
     asserts:
       - notFailedTemplate: {}
+  - it: refuses an unauthenticated NMOS NodePort without a network policy
+    set:
+      nmos.enabled: true
+      nmos.service.type: NodePort
+    asserts:
+      - failedTemplate:
+          errorPattern: "nmos.service.type: NodePort with nmos.enabled needs networkPolicy.enabled and a non-empty networkPolicy.nmosFrom"
+  - it: refuses an NMOS LoadBalancer whose policy lists no peers
+    set:
+      nmos.enabled: true
+      nmos.service.type: LoadBalancer
+      networkPolicy.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "nmos.service.type: LoadBalancer with nmos.enabled needs networkPolicy.enabled"
+  - it: refuses an NMOS LoadBalancer whose peers sit in a disabled policy
+    set:
+      nmos.enabled: true
+      nmos.service.type: LoadBalancer
+      networkPolicy.nmosFrom:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nmos
+    asserts:
+      - failedTemplate:
+          errorPattern: "nmos.service.type: LoadBalancer with nmos.enabled needs networkPolicy.enabled"
+  - it: refuses an NMOS Service type other than ClusterIP, NodePort or LoadBalancer
+    set:
+      nmos.enabled: true
+      nmos.service.type: ExternalName
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/service/type"
+  - it: accepts an NMOS NodePort open to listed peers only
+    set:
+      nmos.enabled: true
+      nmos.service.type: NodePort
+      networkPolicy.enabled: true
+      networkPolicy.nmosFrom:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nmos
+    asserts:
+      - notFailedTemplate: {}
+  - it: accepts an NMOS ClusterIP Service without a network policy
+    set:
+      nmos.enabled: true
+    asserts:
+      - notFailedTemplate: {}
+  - it: accepts an NMOS NodePort with NMOS disabled, which serves no IS-04 or IS-05
+    set:
+      nmos.service.type: NodePort
+    asserts:
+      - notFailedTemplate: {}
   - it: refuses a heartbeat outside 1 to 60 seconds
     set:
       nmos.heartbeatS: 0

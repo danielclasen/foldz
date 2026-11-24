@@ -49,7 +49,7 @@ config:
 | `engine.sampleRate`, `.blockSize`, `.readerMarginSamples` | `48000`, `48`, `576` | `maxCatchupBlocks`, `pruneAfterBlocks`, `rampSamples` are accepted too |
 | `rt.enabled`, `.priority`, `.rtCpu` | `true`, `70`, `auto` | |
 | `nmos.enabled` | `false` | registers the inputs and outputs and takes IS-05 connections ([NMOS](#nmos)) |
-| `nmos.port`, `.service.type` | `8081`, `ClusterIP` | the NMOS listener is bound either way |
+| `nmos.port`, `.service.type` | `8081`, `ClusterIP` | the NMOS listener is bound either way; `NodePort` or `LoadBalancer` with `nmos.enabled` needs `networkPolicy.nmosFrom` ([Authentication](#authentication)) |
 | `nmos.seed`, `.seedName` | `""`, `""` | the resource ids' seed; both empty renders `seedName` `<namespace>/<release>` |
 | `nmos.advertiseHost`, `.advertisePort` | `""`, `0` | `""` renders the NMOS Service's fully qualified name; `0` advertises `nmos.port`; another port needs `advertiseHost` |
 | `nmos.registry.url`, `.dnsSdDomain` | `""`, `""` | `http://host[:port]`; empty browses DNS-SD |
@@ -63,7 +63,7 @@ config:
 | `clusterDomain` | `cluster.local` | the DNS domain of the Services' fully qualified names, which `api.allowedHosts` and the certManager Certificate include |
 | `api.allowedHosts`, `.allowedOrigins` | `[]` | added to the binary's defaults, the API Service's names and the ingress hosts |
 | `tls.mode` | `none` | `none`, `existingSecret` or `certManager` |
-| `tls.listeners` | `[api]` | `api`, `nmos` |
+| `tls.listeners` | `[api]` | `api`, `nmos`; `nmos` is refused with `nmos.enabled` |
 | `tls.existingSecret` | `""` | a `kubernetes.io/tls` Secret |
 | `tls.certManager.issuerRef`, `.dnsNames` | `{name: "", kind: Issuer}`, `[]` | |
 | `ingress.*` | disabled | `hosts` is a list of names; `tls` is the Ingress's own |
@@ -154,7 +154,14 @@ origin clients use beyond those goes in `api.allowedHosts` and
 IS-04 and IS-05 carry no authentication. `networkPolicy.nmosFrom` lists the
 peers allowed to reach the NMOS port; with the policy enabled and the list
 empty, nobody is. The API (or sidecar) and ops ports stay open to every
-source.
+source. With `nmos.enabled`, an NMOS Service of type `NodePort` or
+`LoadBalancer` is refused unless `networkPolicy.enabled` is set and
+`networkPolicy.nmosFrom` is not empty; the chart does not check how wide
+the listed peers are. The policy matches the source address the pod
+sees: under a Service's default `externalTrafficPolicy: Cluster`, a
+client outside the cluster may arrive with a node's address instead of
+its own, so an `ipBlock` peer may not match it. The chart does not set
+`externalTrafficPolicy`.
 
 ## TLS
 
