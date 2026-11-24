@@ -190,7 +190,7 @@ IS-05 v1.2, `/single` and `/bulk`:
   the input is detached from the activation's index, or the output
   disabled. A detach the engine refuses in turn is not repeated: the input
   reads on, and the logged failure, also in `/api/v1/status`, names the
-  flow it still reads. A route the engine stamps later than asked is
+  flow it reads at that moment. A route the engine stamps later than asked is
   logged with the sample it switches at.
 
 Not covered:

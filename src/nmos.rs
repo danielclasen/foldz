@@ -313,7 +313,9 @@ pub fn parse_flow_def(def: &str) -> Option<FlowSeen> {
 pub trait Slots {
     fn route(&self, slot: usize, flow: &str, at_index: u64) -> Result<u64, EntryError>;
     fn detach(&self, slot: usize, at_index: u64) -> Result<u64, EntryError>;
-    /// The flow input `slot` reads now, `None` when it reads none.
+    /// The flow input `slot` reads now, `None` when it reads none or
+    /// there is no such slot. A route stamped for a later index is not
+    /// read yet.
     fn reading(&self, slot: usize) -> Option<String>;
 }
 
@@ -327,8 +329,11 @@ impl Slots for Engine {
     }
 
     fn reading(&self, slot: usize) -> Option<String> {
-        let input = &self.status().inputs[slot];
-        crate::api::connected(input).then(|| input.flow_id.clone())
+        self.status()
+            .inputs
+            .get(slot)
+            .filter(|i| crate::api::connected(i))
+            .map(|i| i.flow_id.clone())
     }
 }
 
@@ -337,7 +342,7 @@ impl Slots for Engine {
 /// at that index instead: samplez-nmos then turns the receiver's
 /// `master_enable` false in `/active`, and the slot reads nothing either.
 /// A refused detach is not called again, since the same call meets the
-/// same refusal; the failure then names the flow the slot still reads.
+/// same refusal; the failure then names the flow the slot reads now.
 pub fn apply_receiver(
     engine: &impl Slots,
     slot: usize,
@@ -378,14 +383,14 @@ pub fn apply_receiver(
     }
 }
 
-/// The failure of a detach the engine refused, logged: `why`, and the
-/// flow input `slot` reads on, which `/active` no longer shows.
+/// The failure of a detach the engine refused: `why`, and the flow input
+/// `slot` reads now, which `/active` no longer shows. samplez-nmos logs
+/// the failure and keeps it as the receiver's.
 fn still_reading(engine: &impl Slots, slot: usize, why: String) -> Fail {
     let reads = match engine.reading(slot) {
-        Some(flow) => format!("input slot {slot} still reads flow {flow}"),
-        None => format!("input slot {slot} reads no flow"),
+        Some(flow) => format!("input slot {slot} reads flow {flow} now"),
+        None => format!("input slot {slot} reads no flow now"),
     };
-    eprintln!("foldz: nmos: {why}; {reads}");
     Fail(format!("{why}; {reads}"))
 }
 
@@ -608,7 +613,7 @@ mod tests {
         assert!(e.0.starts_with("the engine refused the detach ("), "{e}");
         assert!(!e.0.contains("route"), "{e}");
         assert!(
-            e.0.ends_with(&format!("input slot 2 still reads flow {OLD}")),
+            e.0.ends_with(&format!("input slot 2 reads flow {OLD} now")),
             "{e}"
         );
 
@@ -618,7 +623,7 @@ mod tests {
             ..Stub::new(false, true)
         };
         let e = apply_receiver(&stub, 2, &active(false), 0).unwrap_err();
-        assert!(e.0.ends_with("input slot 2 reads no flow"), "{e}");
+        assert!(e.0.ends_with("input slot 2 reads no flow now"), "{e}");
     }
 
     /// Both refused: the slot keeps its last flow, and the failure names
@@ -637,7 +642,7 @@ mod tests {
             "{e}"
         );
         assert!(
-            e.0.ends_with(&format!("input slot 2 still reads flow {OLD}")),
+            e.0.ends_with(&format!("input slot 2 reads flow {OLD} now")),
             "{e}"
         );
     }
