@@ -142,7 +142,8 @@ impl Default for Engine {
     }
 }
 
-// The samplez defaults (samplez src/config.rs at v0.1.0).
+// samplez's defaults (src/config.rs at the pinned tag), restated for the
+// docs; tests/config.rs checks them against the pinned samplez.
 fn default_sample_rate() -> u32 {
     48_000
 }

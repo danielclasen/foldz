@@ -856,6 +856,40 @@ fn load_reads_parses_and_validates_a_file() {
     assert_eq!(Config::load(&path).unwrap_err().at, "inputs[0].layout");
 }
 
+/// foldz restates the engine's timing defaults, which docs/USAGE.md
+/// lists: a samplez bump that moves one fails here until both follow.
+#[test]
+fn engine_defaults_are_the_pinned_samplez_defaults() {
+    let config = parse(base()).unwrap();
+    let ours = config.engine(&config.validate().unwrap()).unwrap();
+    // A samplez config that leaves every timing key to samplez.
+    let theirs = samplez::Config::parse(
+        &json!({
+            "libmxl": "/opt/mxl/lib/libmxl.so",
+            "domains": [{ "name": "a", "path": "/mxl/a" }],
+            "inputs": [{ "name": "main", "domain": "a", "flowId": IN_A, "channels": 2 }],
+            "outputs": [{
+                "name": "stereo", "domain": "a", "flowId": OUT_A,
+                "label": "stereo", "group": "stereo", "role": "Audio", "channels": 2
+            }],
+            "matrix": [[1.0, 0.0], [0.0, 1.0]]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let timing = |c: &samplez::Config| {
+        [
+            ("sampleRate", c.sample_rate),
+            ("blockSize", c.block_size),
+            ("readerMarginSamples", c.reader_margin_samples),
+            ("maxCatchupBlocks", c.max_catchup_blocks),
+            ("pruneAfterBlocks", c.prune_after_blocks),
+            ("rampSamples", c.ramp_samples),
+        ]
+    };
+    assert_eq!(timing(&ours), timing(&theirs));
+}
+
 #[test]
 fn there_is_no_machine_listener() {
     let mut v = base();
