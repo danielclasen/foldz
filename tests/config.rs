@@ -685,6 +685,9 @@ fn grouphint_parts_default_and_are_checked() {
     assert_invalid(v, "outputs[0].group", "grouphint separator");
 }
 
+/// The literal values guard the defaults docs/USAGE.md lists;
+/// `engine_defaults_are_the_pinned_samplez_defaults` guards that they are
+/// samplez's. Each catches a change the other does not.
 #[test]
 fn engine_and_rt_sections_default_to_the_samplez_defaults() {
     let config = parse(base()).unwrap();
