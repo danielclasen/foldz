@@ -108,6 +108,13 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "nmos.service.type: LoadBalancer with nmos.enabled needs networkPolicy.enabled"
+  - it: refuses an NMOS Service type other than ClusterIP, NodePort or LoadBalancer
+    set:
+      nmos.enabled: true
+      nmos.service.type: ExternalName
+    asserts:
+      - failedTemplate:
+          errorPattern: "/nmos/service/type"
   - it: accepts an NMOS NodePort open to listed peers only
     set:
       nmos.enabled: true

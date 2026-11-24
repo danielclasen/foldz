@@ -157,7 +157,11 @@ empty, nobody is. The API (or sidecar) and ops ports stay open to every
 source. With `nmos.enabled`, an NMOS Service of type `NodePort` or
 `LoadBalancer` is refused unless `networkPolicy.enabled` is set and
 `networkPolicy.nmosFrom` is not empty; the chart does not check how wide
-the listed peers are.
+the listed peers are. The policy matches the source address the pod
+sees: under a Service's default `externalTrafficPolicy: Cluster`, a
+client outside the cluster may arrive with a node's address instead of
+its own, so an `ipBlock` peer may not match it. The chart does not set
+`externalTrafficPolicy`.
 
 ## TLS
 
