@@ -27,10 +27,11 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 | `listeners.nmos` | `127.0.0.1:8081` | `{bind, port, tls}`: `/x-nmos/` with NMOS enabled, bound either way; TLS refused with NMOS enabled |
 | `listeners.machine` | | refused |
 | `listeners.*.tls` | `{mode: none}` | [HTTPS](#https) |
-| `auth.mode` | `none` | `none`, `token` or `proxy` ([Authentication](#authentication)) |
+| `auth.mode` | `none` | `none`, `token` or `proxy` ([Authentication](#authentication)); `oidc` is refused |
 | `auth.token.file` | | the bearer token, `token` mode |
 | `auth.proxy` | | `userHeader`, `groupsHeader`, `groupRoles`, `proxy` mode |
 | `auth.machineToken` | | refused |
+| `auth.oidc` | | refused |
 | `api.allowedHosts` | `[]` | `Host` names accepted besides `localhost` and `127.0.0.1` |
 | `api.allowedOrigins` | `[]` | WebSocket `Origin`s; foldz serves no WebSocket |
 | `nmos.enabled` | `false` | registers the inputs and outputs and takes IS-05 connections ([NMOS](#nmos)) |
@@ -281,7 +282,8 @@ HTTP to HTTPS.
 
 ## Authentication
 
-`auth.mode` is `none`, `token` or `proxy`. In every mode, a request
+`auth.mode` is `none`, `token` or `proxy`; `oidc`, which signs browsers
+in for a UI foldz does not serve, is refused. In every mode, a request
 without a valid bearer must carry a `Host` of `localhost`, `127.0.0.1` or
 a name in `api.allowedHosts`. The ops listener (`/healthz`, `/readyz`,
 `/metrics`) is not authenticated.

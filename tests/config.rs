@@ -866,6 +866,30 @@ fn there_is_no_machine_listener() {
     assert_invalid(v, "auth.machineToken", "no machine listener");
 }
 
+#[test]
+fn oidc_is_refused() {
+    let oidc = json!({
+        "issuerUrl": "https://idp.example/realms/media",
+        "clientId": "foldz",
+        "publicUrl": "https://foldz.example",
+        "operatorRole": "operator"
+    });
+    let mut v = base();
+    v["auth"] = json!({ "mode": "oidc", "oidc": oidc });
+    assert_invalid(v, "auth.mode", "use none, token or proxy");
+    let mut v = base();
+    v["auth"] = json!({ "mode": "oidc" });
+    assert_invalid(v, "auth.mode", "use none, token or proxy");
+    let mut v = base();
+    v["auth"] = json!({ "mode": "none", "oidc": oidc });
+    assert_invalid(v, "auth.oidc", "no supported mode reads it");
+    for mode in ["none", "token", "proxy"] {
+        let mut v = base();
+        v["auth"] = json!({ "mode": mode });
+        assert!(parse(v).unwrap().validate().is_ok(), "{mode}");
+    }
+}
+
 /// Runs the foldz binary on `v` and returns its exit status and stderr.
 fn run_foldz(name: &str, v: &Value) -> (Option<i32>, String) {
     let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
