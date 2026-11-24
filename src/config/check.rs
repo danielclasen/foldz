@@ -171,6 +171,20 @@ impl Config {
         if self.auth.machine_token.is_some() {
             return err("auth.machineToken", "foldz has no machine listener");
         }
+        // samplez-service's oidc mode signs browsers in and sends them on
+        // to a UI, which foldz does not serve.
+        if self.auth.mode == samplez_service::config::AuthMode::Oidc {
+            return err(
+                "auth.mode",
+                "oidc is not supported; use none, token or proxy",
+            );
+        }
+        if self.auth.oidc.is_some() {
+            return err(
+                "auth.oidc",
+                "oidc is not supported; use none, token or proxy",
+            );
+        }
 
         if self.domains.is_empty() {
             return err("domains", "at least one domain is required");
