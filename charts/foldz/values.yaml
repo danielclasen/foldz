@@ -76,6 +76,9 @@ nmos:
   heartbeatS: 5
   asset:
     manufacturer: danielclasen
+  # NodePort or LoadBalancer with nmos.enabled needs networkPolicy.enabled
+  # and a non-empty networkPolicy.nmosFrom: IS-04 and IS-05 carry no
+  # authentication.
   service:
     type: ClusterIP
     annotations: {}
@@ -134,7 +137,8 @@ tls:
   # existingSecret: a kubernetes.io/tls Secret.
   # certManager: a cert-manager Certificate the chart creates.
   mode: none
-  # Listeners that serve TLS: api, nmos.
+  # Listeners that serve TLS: api, nmos. nmos is refused with nmos.enabled:
+  # the Node advertises its APIs over plain HTTP.
   listeners:
     - api
   existingSecret: ""

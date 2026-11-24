@@ -22,6 +22,12 @@ setting that has no effect.
 {{- if and $v.nmos.enabled (lt (int $v.terminationGracePeriodSeconds) 10) }}
 {{- fail (printf "terminationGracePeriodSeconds: %v is below 10 with nmos.enabled; foldz waits up to 5 s for the registry's DELETE before it releases its writers, and a SIGKILL before that leaves their flows in the domain" $v.terminationGracePeriodSeconds) }}
 {{- end }}
+{{- if and $v.nmos.enabled (ne $v.nmos.service.type "ClusterIP") (not (and $v.networkPolicy.enabled $v.networkPolicy.nmosFrom)) }}
+
+{{- fail (printf "nmos.service.type: %s with nmos.enabled needs networkPolicy.enabled and a non-empty networkPolicy.nmosFrom; IS-04 and IS-05 carry no authentication, so only listed peers may reach them from outside the cluster" $v.nmos.service.type) }}
+
+{{- end }}
+
 {{- if and $v.nmos.enabled (include "foldz.tlsOn" (dict "ctx" . "listener" "nmos")) }}
 {{- fail "tls.listeners: nmos is refused with nmos.enabled; the Node advertises its APIs over plain HTTP" }}
 {{- end }}
