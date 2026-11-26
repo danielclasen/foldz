@@ -6,9 +6,9 @@ how it behaves.
 ## Build and test
 
 Everything builds and tests inside the samplez builder image, pinned by
-digest in `.github/workflows/ci.yml` and the `Dockerfile`; samplez v0.8.0
+digest in `.github/workflows/ci.yml` and the `Dockerfile`; samplez v0.28.0
 describes what it holds in
-[Building and testing](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#building-and-testing).
+[The builder image](https://github.com/danielclasen/samplez/blob/v0.28.0/docs/BUILDING.md#the-builder-image).
 `.github/workflows/ci.yml` has the exact commands. With the builder's
 digest as `$BUILDER`:
 

@@ -1731,8 +1731,8 @@ dependencies = [
 
 [[package]]
 name = "samplez"
-version = "0.8.0"
-source = "git+https://github.com/danielclasen/samplez?tag=v0.8.0#aaa7eedba5263c060881219a285ee883d9fed5e6"
+version = "0.28.0"
+source = "git+https://github.com/danielclasen/samplez?tag=v0.28.0#9416cb2844c0faa07d08b45dd70f22ae89336eb1"
 dependencies = [
  "libc",
  "mxl-sys",
@@ -1746,8 +1746,8 @@ dependencies = [
 
 [[package]]
 name = "samplez-dsp"
-version = "0.8.0"
-source = "git+https://github.com/danielclasen/samplez?tag=v0.8.0#aaa7eedba5263c060881219a285ee883d9fed5e6"
+version = "0.28.0"
+source = "git+https://github.com/danielclasen/samplez?tag=v0.28.0#9416cb2844c0faa07d08b45dd70f22ae89336eb1"
 dependencies = [
  "libm",
  "serde",
@@ -1755,8 +1755,8 @@ dependencies = [
 
 [[package]]
 name = "samplez-mxl"
-version = "0.8.0"
-source = "git+https://github.com/danielclasen/samplez?tag=v0.8.0#aaa7eedba5263c060881219a285ee883d9fed5e6"
+version = "0.28.0"
+source = "git+https://github.com/danielclasen/samplez?tag=v0.28.0#9416cb2844c0faa07d08b45dd70f22ae89336eb1"
 dependencies = [
  "mxl",
  "mxl-sys",
@@ -1765,8 +1765,8 @@ dependencies = [
 
 [[package]]
 name = "samplez-nmos"
-version = "0.8.0"
-source = "git+https://github.com/danielclasen/samplez?tag=v0.8.0#aaa7eedba5263c060881219a285ee883d9fed5e6"
+version = "0.28.0"
+source = "git+https://github.com/danielclasen/samplez?tag=v0.28.0#9416cb2844c0faa07d08b45dd70f22ae89336eb1"
 dependencies = [
  "axum",
  "hickory-resolver",
@@ -1782,8 +1782,8 @@ dependencies = [
 
 [[package]]
 name = "samplez-service"
-version = "0.8.0"
-source = "git+https://github.com/danielclasen/samplez?tag=v0.8.0#aaa7eedba5263c060881219a285ee883d9fed5e6"
+version = "0.28.0"
+source = "git+https://github.com/danielclasen/samplez?tag=v0.28.0#9416cb2844c0faa07d08b45dd70f22ae89336eb1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2560,7 +2560,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
