@@ -17,7 +17,7 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 | `engine.blockSize` | `48` | samples per block, 16 to 1024 |
 | `engine.readerMarginSamples` | `576` | read delay behind libmxl's clock |
 | `engine.maxCatchupBlocks` | `2` | overdue blocks processed in order after a late wake |
-| `engine.pruneAfterBlocks` | `50` | late blocks of a frozen producer head before the input is pruned |
+| `engine.pruneAfterBlocks` | `50` | consecutive late blocks of a frozen producer head before the input is pruned; a head that moves but stays late is pruned after this or 1 s, whichever is longer ([samplez Inputs](https://github.com/danielclasen/samplez/blob/v0.28.0/docs/USAGE.md#inputs)) |
 | `engine.rampSamples` | `480` | length of every gain ramp and input fade |
 | `rt.enabled` | `true` | `false` skips capabilities, memory locking and `SCHED_FIFO` |
 | `rt.priority` | `70` | `SCHED_FIFO` priority, 1 to 99 |
@@ -48,8 +48,8 @@ One JSON file, `foldz --config <file>`. Unknown fields are refused.
 
 The `engine` and `rt` keys are passed to the samplez engine, at the
 release `Cargo.toml` pins; the table above is what this build accepts, and
-samplez v0.8.0 describes the engine's configuration in
-[samplez-hop](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#samplez-hop).
+samplez v0.28.0 describes the engine's configuration in
+[Configuration](https://github.com/danielclasen/samplez/blob/v0.28.0/docs/USAGE.md#configuration).
 
 An output:
 
@@ -365,9 +365,12 @@ foldz runs its audio thread `SCHED_FIFO` at `rt.priority` and locks its
 memory. That needs `CAP_SYS_NICE` or an `RLIMIT_RTPRIO` at least the
 priority, and `CAP_IPC_LOCK` or an unlimited `RLIMIT_MEMLOCK`. Without
 them foldz runs degraded and says so at start and in `/api/v1/status`
-(`rt`). samplez v0.8.0 describes each step in
-[Real-time set-up](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#real-time-set-up) and what the host needs besides
-in [Real-time requirements](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#real-time-requirements).
+(`rt`). With the RT thread pinned, every other thread is kept off its
+CPU, and off that CPU's SMT siblings while a CPU on another core is
+allowed; the `isolation` step names them. samplez v0.28.0 describes each
+step in
+[Real-time set-up](https://github.com/danielclasen/samplez/blob/v0.28.0/docs/USAGE.md#real-time-set-up) and what the host needs besides
+in [Requirements](https://github.com/danielclasen/samplez/blob/v0.28.0/README.md#requirements).
 
 The image's binary carries the file capabilities
 `cap_sys_nice,cap_ipc_lock=p`: they take effect when the container is

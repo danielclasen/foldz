@@ -754,13 +754,13 @@ fn engine_matrix_places_each_fold_at_its_input_and_output() {
     let inputs: Vec<_> = e
         .inputs
         .iter()
-        .map(|i| (i.name.as_str(), i.flow_id.as_str(), i.channels))
+        .map(|i| (i.name.as_str(), i.flow_id.as_deref(), i.channels))
         .collect();
     assert_eq!(
         inputs,
         [
-            ("spare", foldz::config::UNCONNECTED_FLOW, 2),
-            ("main", IN_A, 8)
+            ("spare", Some(foldz::config::UNCONNECTED_FLOW), 2),
+            ("main", Some(IN_A), 8)
         ]
     );
     let outputs: Vec<_> = e

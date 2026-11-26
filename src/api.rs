@@ -129,8 +129,8 @@ impl Downmix {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     /// The RT setup steps, in the order they run: capabilities, dumpable,
-    /// mlock, stack, sched, affinity, ftzDaz, signals. A degraded step
-    /// leaves the engine running without it.
+    /// mlock, stack, isolation, sched, affinity, ftzDaz, signals. A
+    /// degraded step leaves the engine running without it.
     pub rt: Vec<RtStep>,
     /// Why the output no longer follows from the inputs.
     pub diverged: Option<String>,
@@ -415,6 +415,7 @@ impl Status {
             ("dumpable", &p.dumpable),
             ("mlock", &p.mlock),
             ("stack", &p.stack),
+            ("isolation", &p.isolation),
             ("sched", &t.sched),
             ("affinity", &t.affinity),
             ("ftzDaz", &t.ftz_daz),

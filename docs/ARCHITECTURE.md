@@ -82,8 +82,8 @@ heartbeat advances, and passes the engine, input and NMOS counters to
 ## NMOS
 
 `src/nmos.rs` describes the node to `samplez-nmos`, which serves IS-04 and
-IS-05 and registers the node; samplez v0.8.0 describes that crate in
-[NMOS](https://github.com/danielclasen/samplez/blob/v0.8.0/README.md#nmos). foldz supplies:
+IS-05 and registers the node; samplez v0.28.0 describes that crate in
+[NMOS](https://github.com/danielclasen/samplez/blob/v0.28.0/docs/USAGE.md#nmos). foldz supplies:
 
 - the node model: one Device with the function `Downmix`, a Sender per
   output and a Receiver per input, with ids derived from the seed;

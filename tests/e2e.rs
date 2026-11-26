@@ -19,6 +19,9 @@
 //! stays disabled; on SIGTERM the node leaves a registry before its flows
 //! go; the resource ids survive a restart.
 //!
+//! A third run reads a producer whose head moves but trails the clock by
+//! more than the reader margin: the input is pruned.
+//!
 //! Runs without the test harness. With `SAMPLEZ_REQUIRE_RT=1` the RT
 //! thread must run SCHED_FIFO and the process memory must be locked.
 
@@ -64,6 +67,12 @@ fn main() {
     nmos();
     println!(
         "test is05_activations_route_detach_and_release_at_their_index ... ok ({:.1} s)",
+        t.elapsed().as_secs_f64()
+    );
+    let t = Instant::now();
+    late_input();
+    println!(
+        "test an_input_late_behind_a_moving_head_is_pruned ... ok ({:.1} s)",
         t.elapsed().as_secs_f64()
     );
 }
@@ -143,7 +152,8 @@ fn pilot(ch: usize, idx: u64) -> f32 {
 }
 
 /// A pilot producer committing block `k` once libmxl's clock passes its
-/// end. Dropping it stops the thread and deletes the flow.
+/// end, or `behind` blocks after that. Dropping it stops the thread and
+/// deletes the flow.
 struct Pilot {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -151,6 +161,10 @@ struct Pilot {
 
 impl Pilot {
     fn start(domain: &Path, id: &str, channels: u32) -> Pilot {
+        Pilot::behind(domain, id, channels, 0)
+    }
+
+    fn behind(domain: &Path, id: &str, channels: u32, behind: u64) -> Pilot {
         let api = api();
         let instance = Instance::new(&api, domain).unwrap();
         let cfg = OutputConfig {
@@ -173,7 +187,7 @@ impl Pilot {
             let mut next: Option<u64> = None;
             while !flag.load(Ordering::Relaxed) {
                 let idx = time::timestamp_to_index(&api, time::now(&api));
-                if let Some(due) = (idx / B).checked_sub(1) {
+                if let Some(due) = (idx / B).checked_sub(1 + behind) {
                     for k in next.unwrap_or(due)..=due {
                         for (ch, out) in data.chunks_exact_mut(n).enumerate() {
                             for (i, v) in out.iter_mut().enumerate() {
@@ -185,7 +199,7 @@ impl Pilot {
                     next = Some(due + 1);
                 }
                 let k = next.unwrap_or(0);
-                time::sleep_until(&api, time::index_to_timestamp(&api, (k + 1) * B));
+                time::sleep_until(&api, time::index_to_timestamp(&api, (k + 1 + behind) * B));
             }
             drop(writer);
             drop(instance);
@@ -571,6 +585,26 @@ fn downmix() {
 
     let (code, status) = get(foldz.api, "/api/v1/status");
     assert_eq!(code, 200, "{status}");
+    let steps: Vec<_> = status["rt"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            "capabilities",
+            "dumpable",
+            "mlock",
+            "stack",
+            "isolation",
+            "sched",
+            "affinity",
+            "ftzDaz",
+            "signals"
+        ]
+    );
     if std::env::var("SAMPLEZ_REQUIRE_RT").as_deref() == Ok("1") {
         for step in status["rt"].as_array().unwrap() {
             if step["name"] == "sched" || step["name"] == "mlock" {
@@ -1115,5 +1149,44 @@ fn nmos() {
     assert_eq!(get(foldz.nmos, "/x-nmos/node/v1.3/self").1["id"], node);
     assert_eq!(resource_id(&foldz, "receivers", "main"), receiver);
     assert_eq!(resource_id(&foldz, "senders", "out"), sender);
+    assert!(foldz.terminate(), "foldz exits 0 on SIGTERM");
+}
+
+/// A producer whose head advances at the nominal rate but trails the
+/// clock by more than the reader margin, as one stamping its indices on
+/// another clock does: every block the engine reads is late. The input
+/// is pruned and the status says so, rather than it staying attached and
+/// read late, its output silent, with nothing reported.
+fn late_input() {
+    let domain = Domain::new();
+    let (src, out) = (new_id(), new_id());
+    // 100 blocks, 100 ms: five reader margins behind the clock.
+    let _pilot = Pilot::behind(&domain.0, &src, 2, 100);
+    let config = json!({
+        "mxl": { "libraryPath": libmxl() },
+        "engine": { "readerMarginSamples": MARGIN, "rampSamples": RAMP },
+        "rt": { "rtCpu": "none" },
+        "listeners": {
+            "api": { "bind": "127.0.0.1", "port": 0 },
+            "ops": { "bind": "127.0.0.1", "port": 0 },
+            "nmos": { "bind": "127.0.0.1", "port": 0 }
+        },
+        "domains": [{ "name": "d", "path": domain.0 }],
+        "inputs": [{ "name": "main", "channels": 2, "flow": src, "layout": ["L", "R"] }],
+        "outputs": [{ "name": "out", "flows": [out], "layout": ["L", "R"], "preset": "select" }]
+    });
+    let file = domain.0.join("foldz.json");
+    std::fs::write(&file, config.to_string()).unwrap();
+
+    let foldz = Foldz::start(&file);
+    wait_for(10 * SECOND, "the output flow", || domain.has_flow(&out));
+    wait_for(10 * SECOND, "the late input pruned", || {
+        input_status(&foldz)["state"] == "pruned"
+    });
+    let input = input_status(&foldz);
+    let counters = &input["counters"];
+    assert_eq!(counters["copied"], 0, "{input}");
+    assert!(counters["late"].as_u64().unwrap() > 0, "{input}");
+
     assert!(foldz.terminate(), "foldz exits 0 on SIGTERM");
 }

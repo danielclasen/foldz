@@ -173,6 +173,8 @@ pub fn nmos_config(config: &Config) -> NmosConfig {
             .collect(),
         dns_sd_domain: (!n.registry.dns_sd_domain.is_empty())
             .then(|| n.registry.dns_sd_domain.clone()),
+        // One process registers the node: a restarted one registers anew.
+        continue_held: false,
     }
 }
 

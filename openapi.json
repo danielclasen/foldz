@@ -638,7 +638,7 @@
             "type": "array"
           },
           "rt": {
-            "description": "The RT setup steps, in the order they run: capabilities, dumpable,\nmlock, stack, sched, affinity, ftzDaz, signals. A degraded step\nleaves the engine running without it.",
+            "description": "The RT setup steps, in the order they run: capabilities, dumpable,\nmlock, stack, isolation, sched, affinity, ftzDaz, signals. A\ndegraded step leaves the engine running without it.",
             "items": {
               "$ref": "#/components/schemas/RtStep"
             },
