@@ -1,7 +1,7 @@
 # The foldz image: the binary with file capabilities for its RT thread,
 # libmxl from the samplez builder it is built and tested with, and the
 # licences of everything shipped.
-FROM ghcr.io/danielclasen/samplez-builder@sha256:92ece4452be98fff177b49fb201c8c693130c08845c42725dd5b1173d4863fba AS build
+FROM ghcr.io/danielclasen/samplez-builder:latest@sha256:92ece4452be98fff177b49fb201c8c693130c08845c42725dd5b1173d4863fba AS build
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
