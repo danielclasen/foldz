@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/danielclasen/foldz/compare/v0.3.0...v0.3.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **deps:** move samplez to v0.28.0 ([#21](https://github.com/danielclasen/foldz/issues/21)) ([ac1a573](https://github.com/danielclasen/foldz/commit/ac1a573a7d425723722873cf8f2def1dd3ab8428))
+
 ## [0.3.0](https://github.com/danielclasen/foldz/compare/v0.2.1...v0.3.0) (2026-11-24)
 
 
