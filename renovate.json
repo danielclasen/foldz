@@ -1,0 +1,279 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits"
+  ],
+  "minimumReleaseAge": "3 days",
+  "prHourlyLimit": 2,
+  "ignorePaths": [
+    "**/node_modules/**"
+  ],
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on the first day of the month"
+    ],
+    "semanticCommitType": "fix",
+    "semanticCommitScope": "deps"
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "samplez docs links and prose name the samplez tag the crates build against, so they move with it",
+      "managerFilePatterns": [
+        "/^docs/.+\\.md$/",
+        "/^Cargo\\.toml$/"
+      ],
+      "matchStrings": [
+        "samplez(?:/blob/|\\s)v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "danielclasen/samplez",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "The samplez builder image is pinned by digest alone; samplez publishes it as latest from main",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/ci\\.yml$/",
+        "/(^|/)Dockerfile$/",
+        "/^docs/BUILDING\\.md$/"
+      ],
+      "matchStrings": [
+        "ghcr\\.io/danielclasen/samplez-builder@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "ghcr.io/danielclasen/samplez-builder",
+      "currentValueTemplate": "latest",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Versions pinned in workflows, scripts and Dockerfile ARGs under a renovate marker. A _SHA256 line right below is read as the digest, which only github-release-attachments can recompute",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/ci\\.yml$/",
+        "/^Dockerfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?(?: extractVersion=(?<extractVersion>\\S+))?[ \\t]*\\n[ \\t]*(?:ARG[ \\t]+)?[\\w.-]+[ \\t]*[:=][ \\t]*[\"']?(?<currentValue>[^\"'\\s#]+)[\"']?(?:[ \\t]*\\n[ \\t]*[\\w.-]+_SHA256[ \\t]*[:=][ \\t]*[\"']?(?<currentDigest>[a-f0-9]{64}))?"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "The nmos-testing commit the conformance suites run",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/ci\\.yml$/"
+      ],
+      "matchStrings": [
+        "NMOS_TESTING: (?<currentDigest>[a-f0-9]{40})"
+      ],
+      "depNameTemplate": "AMWA-TV/nmos-testing",
+      "packageNameTemplate": "https://github.com/AMWA-TV/nmos-testing",
+      "currentValueTemplate": "master",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "The AMWA specification commits nmos-testing validates against, one per version branch",
+      "managerFilePatterns": [
+        "/^tests/nmos/specs\\.txt$/"
+      ],
+      "matchStrings": [
+        "(?<depName>[a-z0-9-]+) (?<currentValue>[\\w.-]+) (?<currentDigest>[a-f0-9]{40})"
+      ],
+      "depNameTemplate": "AMWA-TV/{{{depName}}}",
+      "packageNameTemplate": "https://github.com/AMWA-TV/{{{depName}}}",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "The kind node image of the chart smoke test, and the kind release the comment above it names",
+      "managerFilePatterns": [
+        "/^scripts/chart-smoke\\.sh$/"
+      ],
+      "matchStrings": [
+        "node_image=(?<depName>kindest/node):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The kind release named in the comment above the node image",
+      "managerFilePatterns": [
+        "/^scripts/chart-smoke\\.sh$/"
+      ],
+      "matchStrings": [
+        "# The node image of kind (?<currentValue>v\\d+\\.\\d+\\.\\d+)\\."
+      ],
+      "depNameTemplate": "kubernetes-sigs/kind",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "The kubeconform schema repositories, pinned by commit in the raw URLs",
+      "managerFilePatterns": [
+        "/^scripts/chart-test\\.sh$/"
+      ],
+      "matchStrings": [
+        "raw\\.githubusercontent\\.com/(?<depName>[\\w-]+/[\\w-]+)/(?<currentDigest>[a-f0-9]{40})/"
+      ],
+      "packageNameTemplate": "https://github.com/{{{depName}}}",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "The proxy sidecar image of values.yaml with its digest, which the helm-values manager leaves behind although it wins over the tag",
+      "managerFilePatterns": [
+        "/^charts/foldz/values\\.yaml$/"
+      ],
+      "matchStrings": [
+        "repository: (?<depName>quay\\.io/oauth2-proxy/oauth2-proxy)\\s+tag: (?<currentValue>\\S+)\\s+digest: (?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The chart's unit-test snapshot renders the sidecar image of values.yaml and has to move with it",
+      "managerFilePatterns": [
+        "/^charts/foldz/tests/__snapshot__/.+\\.snap$/"
+      ],
+      "matchStrings": [
+        "(?<depName>quay\\.io/oauth2-proxy/oauth2-proxy):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Actions and runner images only run CI, so ci(deps) cuts no release",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "action",
+        "github-runner"
+      ],
+      "groupName": "GitHub Actions",
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Crates compiled into the binary; fix(deps) so release-please cuts a release with them",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchFileNames": [
+        "Cargo.toml"
+      ],
+      "groupName": "Rust crates",
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "The runtime base image ships, so fix(deps) releases it. Its tags are a Debian release and a date",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "debian"
+      ],
+      "versioning": "regex:^trixie-(?<major>\\d{4})(?<minor>\\d{2})(?<patch>\\d{2})$",
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "cargo-about writes the licence notices at build time and is not linked in",
+      "matchPackageNames": [
+        "cargo-about"
+      ],
+      "semanticCommitType": "build",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "nmos-testing and the specifications it checks against only run in CI; one PR for all of them",
+      "matchDepNames": [
+        "AMWA-TV/**"
+      ],
+      "groupName": "nmos-testing",
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Each specification commit follows its version branch; a version-like branch name is not a version to move to",
+      "matchDepNames": [
+        "AMWA-TV/**"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "samplez is pre-1.0, so a minor is usually breaking: not delayed and not grouped with anything else, it surfaces at once as its own CI-red PR. The builder image moves with it, because a samplez release can need the libmxl or Rust of a newer builder; the image's libmxl ships, so fix(deps)",
+      "matchPackageNames": [
+        "danielclasen/samplez",
+        "ghcr.io/danielclasen/samplez-builder"
+      ],
+      "groupName": "samplez",
+      "commitMessageTopic": "samplez",
+      "minimumReleaseAge": "0 days",
+      "schedule": [
+        "at any time"
+      ],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "The builder digest is the custom manager's; the dockerfile manager sees it without a tag",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/danielclasen/samplez-builder"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Tools and schemas of the chart checks only run in CI; kind and its node image have to move together, so they all share one PR",
+      "matchDepNames": [
+        "kubernetes-sigs/kind",
+        "kindest/node",
+        "yannh/kubeconform",
+        "helm-unittest/helm-unittest",
+        "yannh/kubernetes-json-schema",
+        "datreeio/CRDs-catalog"
+      ],
+      "groupName": "chart tooling",
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "The chart ships oauth2-proxy as its default proxy sidecar, so fix(deps) releases it",
+      "matchPackageNames": [
+        "quay.io/oauth2-proxy/oauth2-proxy"
+      ],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "The sidecar image is the custom manager's, which moves its digest with the tag",
+      "matchManagers": [
+        "helm-values"
+      ],
+      "matchPackageNames": [
+        "quay.io/oauth2-proxy/oauth2-proxy"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "The chart's version, appVersion and image tag are release-please's (extra-files)",
+      "matchPackageNames": [
+        "ghcr.io/danielclasen/foldz"
+      ],
+      "enabled": false
+    }
+  ]
+}

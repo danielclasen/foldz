@@ -5,6 +5,7 @@ FROM ghcr.io/danielclasen/samplez-builder@sha256:92ece4452be98fff177b49fb201c8c6
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
+# renovate: datasource=crate depName=cargo-about
 ARG CARGO_ABOUT_VERSION=0.9.3
 # Caps cargo's parallel jobs when set.
 ARG CARGO_BUILD_JOBS
