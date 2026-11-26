@@ -47,7 +47,9 @@ The audio engine and NMOS stack are
 release tag (`tag = "vX.Y.Z"` in `Cargo.toml`), every samplez crate at the
 same one. A samplez bump changes the `Cargo.toml` tags, the samplez
 entries in `Cargo.lock` and the samplez links in `docs/` that name the
-tag, and nothing else, apart from adapting to its API. Links to samplez
+tag, and nothing else, apart from adapting to its API. Renovate
+(`renovate.json`) opens it as a pull request of its own, with the builder
+image digest when that moved too. Links to samplez
 behaviour name the pinned tag; only architecture links point at `main`.
 
 ## Invariants
